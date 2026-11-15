@@ -20,13 +20,13 @@ android {
         versionName = versionText
     }
 
-    // Fixed signing key so every release installs as an update over the previous one.
+    // Signing key and passwords come from GitHub Actions secrets (never stored in the repo).
     signingConfigs {
         create("app") {
             storeFile = rootProject.file("signing/sweepeq.keystore")
-            storePassword = "sweepeq123"
-            keyAlias = "sweepeq"
-            keyPassword = "sweepeq123"
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 
