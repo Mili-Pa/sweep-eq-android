@@ -111,6 +111,7 @@ class MainActivity : Activity() {
         const val SWEEP_SEC = 12.0
         val BG = Color.rgb(16, 16, 24)
         val FG = Color.rgb(220, 220, 230)
+        val EQ_CENTERS = doubleArrayOf(31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
     }
 
     private val fft = Fft(N)
@@ -125,11 +126,14 @@ class MainActivity : Activity() {
     private lateinit var liveBtn: Button
     private lateinit var modeBtn: Button
     private lateinit var micBtn: Button
+    private lateinit var eqBtn: Button
     @Volatile private var running = false
     @Volatile private var live = false
     @Volatile private var liveStop = false
     @Volatile private var btMode = false
     @Volatile private var micMode = 0
+    @Volatile private var eqOn = false
+    @Volatile private var lastEq: DoubleArray? = null
     private var pending: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -154,11 +158,13 @@ class MainActivity : Activity() {
             setTextColor(FG)
         })
         root.addView(TextView(this).apply {
-            text = "Live spectrum shows what the microphone hears. The sweep test plays a beep and a " +
-                "20 Hz - 20 kHz sweep, then measures the response and suggests an EQ.\n" +
+            text = "Live spectrum shows what the microphone hears (yellow = peak hold, like Spectroid). " +
+                "The sweep test plays a beep and a 20 Hz - 20 kHz sweep, then measures the response and suggests an EQ.\n" +
                 "Speakers: put the phone where you listen, quiet room, volume about 50%.\n" +
                 "BT earbuds: connect them, set Setup to BT earbuds, press the earbud tip firmly against the " +
-                "phone microphone hole (seal it with your fingers), media volume 70-100%."
+                "phone microphone hole (seal it with your fingers), media volume 70-100%.\n" +
+                "EQ in test: after a sweep, switch it On and run again. The sweep is pre-filtered with the suggested " +
+                "EQ, so the grey previous curve and the blue new curve show whether the EQ really flattens the response."
             setTextColor(FG)
             textSize = 13f
             setPadding(0, pad / 2, 0, pad / 2)
@@ -185,6 +191,17 @@ class MainActivity : Activity() {
                 text = micNames[micMode]
             }
         }
+        eqBtn = Button(this).apply {
+            text = "EQ in test: Off"
+            setOnClickListener {
+                if (!eqOn && lastEq == null) {
+                    status.text = "Run a sweep test first to get an EQ suggestion."
+                } else {
+                    eqOn = !eqOn
+                    text = if (eqOn) "EQ in test: ON" else "EQ in test: Off"
+                }
+            }
+        }
         val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         row1.addView(liveBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row1.addView(sweepBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -193,6 +210,7 @@ class MainActivity : Activity() {
         row2.addView(modeBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row2.addView(micBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(row2)
+        root.addView(eqBtn)
         status = TextView(this).apply {
             setTextColor(FG)
             setPadding(0, pad / 2, 0, pad / 2)
@@ -246,6 +264,7 @@ class MainActivity : Activity() {
         sweepBtn.isEnabled = !locked
         modeBtn.isEnabled = !locked
         micBtn.isEnabled = !locked
+        eqBtn.isEnabled = !locked
     }
 
     private fun startSweep() {
@@ -384,6 +403,36 @@ class MainActivity : Activity() {
         ui { status.text = "Live stopped." }
     }
 
+    /** Pre-filters the sweep with the suggested 10-band EQ (peaking filters, about one octave wide). */
+    private fun applyEq(play: ShortArray, from: Int, len: Int, gains: DoubleArray) {
+        val y = DoubleArray(len) { play[from + it] / 32768.0 }
+        for (j in EQ_CENTERS.indices) {
+            val g = gains[j]
+            if (abs(g) < 0.05) continue
+            val a = 10.0.pow(g / 40)
+            val w0 = 2 * PI * EQ_CENTERS[j] / SR
+            val alpha = sin(w0) / (2 * 1.41)
+            val cs = cos(w0)
+            val b0 = 1 + alpha * a
+            val b1 = -2 * cs
+            val b2 = 1 - alpha * a
+            val a0 = 1 + alpha / a
+            val a1 = -2 * cs
+            val a2 = 1 - alpha / a
+            var x1 = 0.0; var x2 = 0.0; var y1 = 0.0; var y2 = 0.0
+            for (i in 0 until len) {
+                val xi = y[i]
+                val yi = (b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0
+                x2 = x1; x1 = xi; y2 = y1; y1 = yi
+                y[i] = yi
+            }
+        }
+        var pk = 0.0
+        for (v in y) pk = max(pk, abs(v))
+        val scale = if (pk > 0.5) 0.5 / pk else 1.0
+        for (i in 0 until len) play[from + i] = (y[i] * scale * 32767).toInt().toShort()
+    }
+
     private fun runTest(plan: Plan) {
         val total = ((plan.sweepAt + SWEEP_SEC + plan.tail) * SR).toInt()
         val play = ShortArray(total)
@@ -410,6 +459,10 @@ class MainActivity : Activity() {
             val env = min(1.0, min(i, sn - 1 - i).toDouble() / fade)
             play[s0 + i] = (sin(phase) * 0.5 * env * 32767).toInt().toShort()
         }
+
+        val eq = lastEq
+        val eqApplied = eqOn && eq != null
+        if (eqApplied && eq != null) applyEq(play, s0, sn, eq)
 
         val rec = openRecord()
         val track = AudioTrack.Builder()
@@ -471,7 +524,7 @@ class MainActivity : Activity() {
         track.stop(); track.release()
 
         ui { status.text = "Analyzing..." }
-        analyze(buf.copyOf(n), plan, outType)
+        analyze(buf.copyOf(n), plan, outType, eqApplied)
     }
 
     private fun bandpass(x: DoubleArray, from: Int, to: Int, fc: Double, q: Double): DoubleArray {
@@ -493,7 +546,7 @@ class MainActivity : Activity() {
         return y
     }
 
-    private fun analyze(pcm: ShortArray, plan: Plan, outType: Int) {
+    private fun analyze(pcm: ShortArray, plan: Plan, outType: Int, eqApplied: Boolean) {
         val n = pcm.size
         if (n < ((plan.sweepAt + SWEEP_SEC) * SR).toInt()) throw IllegalStateException("Recording too short, try again.")
 
@@ -595,16 +648,13 @@ class MainActivity : Activity() {
             if (c > 0 && snrSum / c >= snrMin) lv[k] = 10 * log10(s / c)
         }
 
-        // earbuds are normalised at 1 kHz (usual for headphone plots), speakers at the mid band average
-        val refLo = if (plan.bt) 780.0 else 250.0
-        val refHi = if (plan.bt) 1300.0 else 4000.0
-        val minRef = if (plan.bt) 2 else 4
-        val refVals = centers.indices.filter { centers[it] in refLo..refHi && !lv[it].isNaN() }.map { lv[it] }
-        if (refVals.size < minRef) throw IllegalStateException("Signal too weak or too noisy. Raise the volume or reduce noise and try again.")
+        // everything is plotted relative to 1 kHz (the usual convention, and what Spectroid users compare against)
+        val refVals = centers.indices.filter { centers[it] in 780.0..1300.0 && !lv[it].isNaN() }.map { lv[it] }
+        if (refVals.size < 2) throw IllegalStateException("Signal too weak or too noisy around 1 kHz. Raise the volume or reduce noise and try again.")
         val ref = refVals.average()
         val rel = DoubleArray(lv.size) { if (lv[it].isNaN()) Double.NaN else lv[it] - ref }
 
-        val eqF = doubleArrayOf(31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
+        val eqF = EQ_CENTERS
         val eqG = DoubleArray(eqF.size) { Double.NaN }
         var dropped = false
         for ((j, f) in eqF.withIndex()) {
@@ -618,14 +668,17 @@ class MainActivity : Activity() {
                 dropped = true
             }
         }
+        lastEq = DoubleArray(eqG.size) { if (eqG[it].isNaN()) 0.0 else eqG[it] }
 
         val peakDb = if (sigL.isEmpty()) -120.0 else 10 * log10(sigL.max())
         val outName = devName(outType)
 
         val sb = StringBuilder()
         sb.append("Output: $outName   ${micNames[micMode]}\n")
-        sb.append(String.format(Locale.US, "Strongest band: %.0f dBFS\n\n", peakDb))
-        sb.append("Suggested EQ (10 bands):\n")
+        sb.append(String.format(Locale.US, "Strongest band: %.0f dBFS\n", peakDb))
+        if (eqApplied) sb.append("EQ in test: ON (the sweep was pre-filtered with the previous suggestion)\n")
+        sb.append("\nSuggested EQ (10 bands)")
+        sb.append(if (eqApplied) " - residual correction on top of the applied EQ:\n" else ":\n")
         for (j in eqF.indices) {
             val label = if (eqF[j] >= 1000) "${(eqF[j] / 1000).toInt()} kHz" else "${eqF[j].toInt()} Hz"
             if (eqG[j].isNaN()) sb.append(String.format(Locale.US, "%7s     n/a\n", label))
@@ -803,6 +856,7 @@ class SpectrumView(ctx: Context) : View(ctx) {
 class ResponseView(ctx: Context) : View(ctx) {
     private var fc = DoubleArray(0)
     private var rel = DoubleArray(0)
+    private var prev = DoubleArray(0)
     private var eqF = DoubleArray(0)
     private var eqG = DoubleArray(0)
     private var lim = 24.0
@@ -810,8 +864,12 @@ class ResponseView(ctx: Context) : View(ctx) {
     private val d = resources.displayMetrics.density
 
     fun setData(fc: DoubleArray, rel: DoubleArray, eqF: DoubleArray, eqG: DoubleArray) {
+        val old = this.rel
+        prev = if (old.size == rel.size) old else DoubleArray(0)
         this.fc = fc; this.rel = rel; this.eqF = eqF; this.eqG = eqG
-        val m = rel.filter { !it.isNaN() }.maxOfOrNull { abs(it) } ?: 0.0
+        var m = 0.0
+        for (v in rel) if (!v.isNaN()) m = max(m, abs(v))
+        for (v in prev) if (!v.isNaN()) m = max(m, abs(v))
         lim = (ceil(m / 12.0) * 12.0).coerceIn(24.0, 48.0)
         invalidate()
     }
@@ -851,25 +909,37 @@ class ResponseView(ctx: Context) : View(ctx) {
         }
         if (fc.isEmpty()) return
 
-        // measured response (gaps where the signal was too weak)
-        val path = Path()
-        var pen = false
-        for (i in fc.indices) {
-            if (rel[i].isNaN()) {
-                pen = false
-                continue
+        fun curve(xs: DoubleArray, ys: DoubleArray): Path {
+            val path = Path()
+            var pen = false
+            for (i in xs.indices) {
+                if (ys[i].isNaN()) {
+                    pen = false
+                    continue
+                }
+                if (!pen) {
+                    path.moveTo(x(xs[i]), y(ys[i]))
+                    pen = true
+                } else {
+                    path.lineTo(x(xs[i]), y(ys[i]))
+                }
             }
-            if (!pen) {
-                path.moveTo(x(fc[i]), y(rel[i]))
-                pen = true
-            } else {
-                path.lineTo(x(fc[i]), y(rel[i]))
-            }
+            return path
         }
+
+        // previous run (for comparing before / after the EQ)
+        if (prev.isNotEmpty()) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 2 * d
+            p.color = Color.rgb(140, 140, 150)
+            c.drawPath(curve(fc, prev), p)
+        }
+
+        // measured response (gaps where the signal was too weak)
         p.style = Paint.Style.STROKE
         p.strokeWidth = 3 * d
         p.color = Color.rgb(80, 200, 255)
-        c.drawPath(path, p)
+        c.drawPath(curve(fc, rel), p)
         p.style = Paint.Style.FILL
         for (i in fc.indices) {
             if (rel[i].isNaN()) {
@@ -879,31 +949,20 @@ class ResponseView(ctx: Context) : View(ctx) {
         }
 
         // suggested EQ
-        val ep = Path()
-        pen = false
-        for (i in eqF.indices) {
-            if (eqG[i].isNaN()) {
-                pen = false
-                continue
-            }
-            if (!pen) {
-                ep.moveTo(x(eqF[i]), y(eqG[i]))
-                pen = true
-            } else {
-                ep.lineTo(x(eqF[i]), y(eqG[i]))
-            }
-        }
         p.style = Paint.Style.STROKE
+        p.strokeWidth = 3 * d
         p.color = Color.rgb(255, 140, 60)
-        c.drawPath(ep, p)
+        c.drawPath(curve(eqF, eqG), p)
         p.style = Paint.Style.FILL
         for (i in eqF.indices) if (!eqG[i].isNaN()) c.drawCircle(x(eqF[i]), y(eqG[i]), 4 * d, p)
 
         p.color = Color.rgb(80, 200, 255)
-        c.drawText("measured (relative)", l + 6 * d, t + 12 * d, p)
+        c.drawText("measured (rel. to 1 kHz)", l + 6 * d, t + 12 * d, p)
         p.color = Color.rgb(255, 140, 60)
-        c.drawText("suggested EQ", l + 130 * d, t + 12 * d, p)
+        c.drawText("suggested EQ", l + 150 * d, t + 12 * d, p)
+        p.color = Color.rgb(140, 140, 150)
+        c.drawText("previous run", l + 6 * d, t + 24 * d, p)
         p.color = Color.GRAY
-        c.drawText("grey dot = no signal", l + 220 * d, t + 12 * d, p)
+        c.drawText("grey dot = no signal", l + 150 * d, t + 24 * d, p)
     }
 }
