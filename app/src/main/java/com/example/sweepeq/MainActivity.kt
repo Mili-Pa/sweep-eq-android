@@ -75,8 +75,8 @@ class Fft(private val n: Int) {
                     val xi = re[j + half] * wi + im[j + half] * wr
                     re[j + half] = re[j] - xr
                     im[j + half] = im[j] - xi
-                    re[j] += xr
-                    im[j] += xi
+                    re[j] = re[j] + xr
+                    im[j] = im[j] + xi
                     k += step
                 }
                 i += len
@@ -434,7 +434,7 @@ class MainActivity : Activity() {
             var s = max(0, from)
             while (s + N <= min(n, to)) {
                 fft.power(pcm, s, pw)
-                for (k in 0 until half) noise[k] += pw[k]
+                for (k in 0 until half) noise[k] = noise[k] + pw[k]
                 cnt++
                 s += HOP
             }
@@ -443,7 +443,8 @@ class MainActivity : Activity() {
         var nf = accumulate(sw0 + ((SWEEP_SEC + 0.15) * SR).toInt(), n)
         if (nf == 0) nf = accumulate(onset + (0.35 * SR).toInt(), sw0 - (0.02 * SR).toInt())
         if (nf == 0) throw IllegalStateException("Could not estimate the noise floor, try again.")
-        for (k in 0 until half) noise[k] /= nf
+        val nfd = nf.toDouble()
+        for (k in 0 until half) noise[k] = noise[k] / nfd
 
         // follow the sweep frame by frame: find the strongest peak near the expected frequency
         val lnr = ln(F1 / F0)
@@ -605,12 +606,12 @@ class SpectrumView(ctx: Context) : View(ctx) {
         p.style = Paint.Style.STROKE
         for (g in 0..5) {
             val v = -20f * g
+            p.style = Paint.Style.STROKE
             p.color = Color.rgb(50, 50, 70)
             c.drawLine(l, yd(v), r, yd(v), p)
             p.style = Paint.Style.FILL
             p.color = Color.LTGRAY
             c.drawText(String.format(Locale.US, "%.0f", v), 4 * d, yd(v) + 4 * d, p)
-            p.style = Paint.Style.STROKE
         }
         val marks = listOf(
             20.0 to "20", 50.0 to "50", 100.0 to "100", 200.0 to "200", 500.0 to "500",
@@ -709,7 +710,6 @@ class ResponseView(ctx: Context) : View(ctx) {
 
         p.textSize = 10 * d
         p.strokeWidth = 1f
-        p.style = Paint.Style.STROKE
         var db = minDb
         while (db <= maxDb) {
             p.style = Paint.Style.STROKE
