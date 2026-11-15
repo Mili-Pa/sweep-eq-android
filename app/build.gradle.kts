@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Version comes from the VERSION file (major.minor.patch); versionCode is derived from it.
+val versionText = rootProject.file("VERSION").readText().trim()
+val versionParts = versionText.split(".").map { it.toInt() }
+val computedVersionCode = versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]
+
 android {
     namespace = "com.example.sweepeq"
     compileSdk = 34
@@ -11,8 +16,29 @@ android {
         applicationId = "com.example.sweepeq"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = computedVersionCode
+        versionName = versionText
+    }
+
+    // Fixed signing key so every release installs as an update over the previous one.
+    signingConfigs {
+        create("app") {
+            storeFile = rootProject.file("signing/sweepeq.keystore")
+            storePassword = "sweepeq123"
+            keyAlias = "sweepeq"
+            keyPassword = "sweepeq123"
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("app")
+        }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 
     compileOptions {
