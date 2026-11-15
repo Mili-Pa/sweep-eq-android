@@ -12,7 +12,9 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
@@ -87,6 +89,17 @@ class Fft(private val n: Int) {
     }
 }
 
+/** Timeline of the test signal. Bluetooth earbuds need a wake-up tone and more slack for latency. */
+internal class Plan(val bt: Boolean) {
+    val wake = if (bt) 1.5 else 0.0
+    val burst = if (bt) 0.4 else 0.25
+    val gap = if (bt) 1.0 else 0.55
+    val burstAt = wake
+    val sweepAt = wake + burst + gap
+    val tail = if (bt) 1.2 else 0.6
+    val extraRec = if (bt) 2.0 else 1.0
+}
+
 class MainActivity : Activity() {
 
     companion object {
@@ -96,15 +109,13 @@ class MainActivity : Activity() {
         const val F0 = 20.0
         const val F1 = 20000.0
         const val SWEEP_SEC = 12.0
-        const val BURST_SEC = 0.25
-        const val SWEEP_START = 0.8
-        const val TAIL = 0.6
         val BG = Color.rgb(16, 16, 24)
         val FG = Color.rgb(220, 220, 230)
     }
 
     private val fft = Fft(N)
     private val pw = DoubleArray(N / 2)
+    private val micNames = arrayOf("Mic: Auto", "Mic: Main (MIC)", "Mic: Second (CAMCORDER)")
 
     private lateinit var status: TextView
     private lateinit var result: TextView
@@ -112,9 +123,13 @@ class MainActivity : Activity() {
     private lateinit var graph: ResponseView
     private lateinit var sweepBtn: Button
     private lateinit var liveBtn: Button
+    private lateinit var modeBtn: Button
+    private lateinit var micBtn: Button
     @Volatile private var running = false
     @Volatile private var live = false
     @Volatile private var liveStop = false
+    @Volatile private var btMode = false
+    @Volatile private var micMode = 0
     private var pending: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -122,6 +137,11 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val d = resources.displayMetrics.density
         val pad = (12 * d).toInt()
+        val ver = try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: ""
+        } catch (_: Throwable) {
+            ""
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -129,19 +149,20 @@ class MainActivity : Activity() {
             setBackgroundColor(BG)
         }
         root.addView(TextView(this).apply {
-            text = "Sweep EQ"
+            text = "Sweep EQ v$ver"
             textSize = 22f
             setTextColor(FG)
         })
         root.addView(TextView(this).apply {
             text = "Live spectrum shows what the microphone hears. The sweep test plays a beep and a " +
-                "20 Hz - 20 kHz sweep (about 14 s), then measures the response and suggests an EQ. " +
-                "Put the phone where you listen, in a quiet room, media volume about 50%."
+                "20 Hz - 20 kHz sweep, then measures the response and suggests an EQ.\n" +
+                "Speakers: put the phone where you listen, quiet room, volume about 50%.\n" +
+                "BT earbuds: connect them, set Setup to BT earbuds, press the earbud tip firmly against the " +
+                "phone microphone hole (seal it with your fingers), media volume 70-100%."
             setTextColor(FG)
             textSize = 13f
             setPadding(0, pad / 2, 0, pad / 2)
         })
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         liveBtn = Button(this).apply {
             text = "Live spectrum"
             setOnClickListener { toggleLive() }
@@ -150,9 +171,28 @@ class MainActivity : Activity() {
             text = "Start sweep test"
             setOnClickListener { startSweep() }
         }
-        row.addView(liveBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(sweepBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        root.addView(row)
+        modeBtn = Button(this).apply {
+            text = "Setup: Speakers"
+            setOnClickListener {
+                btMode = !btMode
+                text = if (btMode) "Setup: BT earbuds" else "Setup: Speakers"
+            }
+        }
+        micBtn = Button(this).apply {
+            text = micNames[0]
+            setOnClickListener {
+                micMode = (micMode + 1) % micNames.size
+                text = micNames[micMode]
+            }
+        }
+        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row1.addView(liveBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row1.addView(sweepBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row1)
+        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row2.addView(modeBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row2.addView(micBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row2)
         status = TextView(this).apply {
             setTextColor(FG)
             setPadding(0, pad / 2, 0, pad / 2)
@@ -202,23 +242,30 @@ class MainActivity : Activity() {
         liveStop = true
     }
 
+    private fun lockButtons(locked: Boolean) {
+        sweepBtn.isEnabled = !locked
+        modeBtn.isEnabled = !locked
+        micBtn.isEnabled = !locked
+    }
+
     private fun startSweep() {
         withMic {
             if (running) return@withMic
             running = true
-            sweepBtn.isEnabled = false
+            lockButtons(true)
             liveBtn.isEnabled = false
             result.text = ""
             spectrum.reset()
+            val plan = Plan(btMode)
             thread {
                 try {
-                    runTest()
+                    runTest(plan)
                 } catch (e: Throwable) {
                     ui { status.text = "Error: ${e.message}" }
                 } finally {
                     running = false
                     ui {
-                        sweepBtn.isEnabled = true
+                        lockButtons(false)
                         liveBtn.isEnabled = true
                     }
                 }
@@ -236,7 +283,7 @@ class MainActivity : Activity() {
             running = true
             live = true
             liveStop = false
-            sweepBtn.isEnabled = false
+            lockButtons(true)
             liveBtn.text = "Stop live"
             spectrum.reset()
             status.text = "Live..."
@@ -249,7 +296,7 @@ class MainActivity : Activity() {
                     running = false
                     live = false
                     ui {
-                        sweepBtn.isEnabled = true
+                        lockButtons(false)
                         liveBtn.text = "Live spectrum"
                     }
                 }
@@ -259,15 +306,48 @@ class MainActivity : Activity() {
 
     private fun openRecord(): AudioRecord {
         val minBuf = AudioRecord.getMinBufferSize(SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        for (src in intArrayOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)) {
+        val sources = when (micMode) {
+            1 -> intArrayOf(MediaRecorder.AudioSource.MIC)
+            2 -> intArrayOf(MediaRecorder.AudioSource.CAMCORDER)
+            else -> intArrayOf(MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.MIC)
+        }
+        for (src in sources) {
             try {
                 val a = AudioRecord(src, SR, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(minBuf, SR) * 2)
-                if (a.state == AudioRecord.STATE_INITIALIZED) return a else a.release()
+                if (a.state == AudioRecord.STATE_INITIALIZED) {
+                    // always record with the phone's own microphone, never the earbuds' mic
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val dev = am.getDevices(AudioManager.GET_DEVICES_INPUTS)
+                            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+                        if (dev != null) a.setPreferredDevice(dev)
+                    } catch (_: Throwable) {
+                    }
+                    return a
+                } else {
+                    a.release()
+                }
             } catch (_: Throwable) {
             }
         }
-        throw IllegalStateException("Cannot open the microphone")
+        throw IllegalStateException(
+            if (micMode == 2) "This phone does not offer a second mic source (CAMCORDER)." else "Cannot open the microphone"
+        )
     }
+
+    private fun devName(t: Int): String = when (t) {
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth (A2DP)"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth (call mode)"
+        26, 27 -> "Bluetooth LE"
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "phone speaker"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired headphones"
+        AudioDeviceInfo.TYPE_USB_HEADSET, AudioDeviceInfo.TYPE_USB_DEVICE -> "USB audio"
+        -1 -> "unknown"
+        else -> "other ($t)"
+    }
+
+    private fun isBtOut(t: Int): Boolean =
+        t == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || t == 26 || t == 27
 
     private fun pushFrame(p: DoubleArray, pcm: ShortArray, from: Int, to: Int) {
         val db = FloatArray(N / 2) { (10 * log10(p[it] + 1e-12)).toFloat() }
@@ -304,18 +384,23 @@ class MainActivity : Activity() {
         ui { status.text = "Live stopped." }
     }
 
-    private fun runTest() {
-        val total = ((SWEEP_START + SWEEP_SEC + TAIL) * SR).toInt()
+    private fun runTest(plan: Plan) {
+        val total = ((plan.sweepAt + SWEEP_SEC + plan.tail) * SR).toInt()
         val play = ShortArray(total)
 
-        // 1 kHz marker burst at t = 0 (used to find the playback/recording latency)
-        val bn = (BURST_SEC * SR).toInt()
+        // quiet 1 kHz wake-up tone (earbuds only): Bluetooth links often swallow the first moments of audio
+        val wn = (plan.wake * SR).toInt()
+        for (i in 0 until wn) {
+            play[i] = (sin(2 * PI * 1000.0 * i / SR) * 0.04 * 32767).toInt().toShort()
+        }
+        // 1 kHz marker burst (used to find the playback/recording latency)
+        val bn = (plan.burst * SR).toInt()
         for (i in 0 until bn) {
             val env = min(1.0, min(i, bn - 1 - i).toDouble() / (0.01 * SR))
-            play[i] = (sin(2 * PI * 1000.0 * i / SR) * 0.5 * env * 32767).toInt().toShort()
+            play[wn + i] = (sin(2 * PI * 1000.0 * i / SR) * 0.5 * env * 32767).toInt().toShort()
         }
         // logarithmic sweep
-        val s0 = (SWEEP_START * SR).toInt()
+        val s0 = (plan.sweepAt * SR).toInt()
         val sn = (SWEEP_SEC * SR).toInt()
         val lnr = ln(F1 / F0)
         val fade = (0.05 * SR).toInt()
@@ -346,12 +431,14 @@ class MainActivity : Activity() {
             .build()
         track.write(play, 0, play.size)
 
-        val recTotal = total + SR
+        val recTotal = total + (plan.extraRec * SR).toInt()
         val buf = ShortArray(recTotal)
         var n = 0
         var started = false
         var lastPct = -1
         var nextEnd = N
+        var outType = -1
+        var routeRead = false
         rec.startRecording()
         while (n < recTotal) {
             val r = rec.read(buf, n, min(4096, recTotal - n))
@@ -360,6 +447,14 @@ class MainActivity : Activity() {
             if (!started && n >= SR * 3 / 10) {
                 track.play()
                 started = true
+            }
+            if (started && !routeRead && n > SR * 2) {
+                routeRead = true
+                outType = try {
+                    track.routedDevice?.type ?: -1
+                } catch (_: Throwable) {
+                    -1
+                }
             }
             while (nextEnd <= n) {
                 fft.power(buf, nextEnd - N, pw)
@@ -376,7 +471,7 @@ class MainActivity : Activity() {
         track.stop(); track.release()
 
         ui { status.text = "Analyzing..." }
-        analyze(buf.copyOf(n))
+        analyze(buf.copyOf(n), plan, outType)
     }
 
     private fun bandpass(x: DoubleArray, from: Int, to: Int, fc: Double, q: Double): DoubleArray {
@@ -398,16 +493,16 @@ class MainActivity : Activity() {
         return y
     }
 
-    private fun analyze(pcm: ShortArray) {
+    private fun analyze(pcm: ShortArray, plan: Plan, outType: Int) {
         val n = pcm.size
-        if (n < 6 * SR) throw IllegalStateException("Recording too short, try again.")
+        if (n < ((plan.sweepAt + SWEEP_SEC) * SR).toInt()) throw IllegalStateException("Recording too short, try again.")
 
         var peakAbs = 0
         for (s in pcm) peakAbs = max(peakAbs, abs(s.toInt()))
         if (peakAbs >= 32000) throw IllegalStateException("The recording is clipping. Lower the media volume and try again.")
 
         // find the marker burst (latency)
-        val lim = 4 * SR
+        val lim = min(n, ((plan.burstAt + 4.0) * SR).toInt())
         val x = DoubleArray(lim) { pcm[it] / 32768.0 }
         val yb = bandpass(x, 0, lim, 1000.0, 5.0)
         val win = 240
@@ -419,13 +514,14 @@ class MainActivity : Activity() {
             env[i] = acc / win
         }
         val mx = env.max()
-        if (mx < 0.002) throw IllegalStateException("Test tone not heard. Raise the media volume and reduce noise.")
+        val minTone = if (plan.bt) 0.0005 else 0.002
+        if (mx < minTone) throw IllegalStateException("Test tone not heard. Raise the media volume, press the earbud closer to the mic, or reduce noise.")
         val thr = mx * 0.5
         val onset = max(0, env.indexOfFirst { it > thr } - win / 2)
 
         val half = N / 2
         val binHz = SR.toDouble() / N
-        val sw0 = onset + (SWEEP_START * SR).toInt()
+        val sw0 = onset + ((plan.sweepAt - plan.burstAt) * SR).toInt()
 
         // noise spectrum: after the sweep if possible, else the gap between beep and sweep
         val noise = DoubleArray(half)
@@ -441,7 +537,7 @@ class MainActivity : Activity() {
             return cnt
         }
         var nf = accumulate(sw0 + ((SWEEP_SEC + 0.15) * SR).toInt(), n)
-        if (nf == 0) nf = accumulate(onset + (0.35 * SR).toInt(), sw0 - (0.02 * SR).toInt())
+        if (nf == 0) nf = accumulate(onset + ((plan.burst + 0.1) * SR).toInt(), sw0 - (0.02 * SR).toInt())
         if (nf == 0) throw IllegalStateException("Could not estimate the noise floor, try again.")
         val nfd = nf.toDouble()
         for (k in 0 until half) noise[k] = noise[k] / nfd
@@ -480,6 +576,7 @@ class MainActivity : Activity() {
             start += HOP
         }
 
+        val snrMin = if (plan.bt) 6.0 else 10.0
         val centers = (-15..12).map { 1000.0 * 2.0.pow(it / 3.0) }
         val lv = DoubleArray(centers.size) { Double.NaN }
         for ((k, fc) in centers.withIndex()) {
@@ -495,34 +592,56 @@ class MainActivity : Activity() {
                     c++
                 }
             }
-            if (c > 0 && snrSum / c >= 10.0) lv[k] = 10 * log10(s / c)
+            if (c > 0 && snrSum / c >= snrMin) lv[k] = 10 * log10(s / c)
         }
 
-        val refVals = centers.indices.filter { centers[it] in 250.0..4000.0 && !lv[it].isNaN() }.map { lv[it] }
-        if (refVals.size < 4) throw IllegalStateException("Signal too weak or too noisy. Raise the volume or reduce noise and try again.")
+        // earbuds are normalised at 1 kHz (usual for headphone plots), speakers at the mid band average
+        val refLo = if (plan.bt) 780.0 else 250.0
+        val refHi = if (plan.bt) 1300.0 else 4000.0
+        val minRef = if (plan.bt) 2 else 4
+        val refVals = centers.indices.filter { centers[it] in refLo..refHi && !lv[it].isNaN() }.map { lv[it] }
+        if (refVals.size < minRef) throw IllegalStateException("Signal too weak or too noisy. Raise the volume or reduce noise and try again.")
         val ref = refVals.average()
         val rel = DoubleArray(lv.size) { if (lv[it].isNaN()) Double.NaN else lv[it] - ref }
 
         val eqF = doubleArrayOf(31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
         val eqG = DoubleArray(eqF.size) { Double.NaN }
+        var dropped = false
         for ((j, f) in eqF.withIndex()) {
-            val vals = centers.indices
-                .filter { abs(ln(centers[it] / f) / ln(2.0)) <= 0.34 && !rel[it].isNaN() }
-                .map { rel[it] }
+            val near = centers.indices.filter { abs(ln(centers[it] / f) / ln(2.0)) <= 0.34 && !rel[it].isNaN() }
+            // with earbuds, a band more than 15 dB under 1 kHz is almost always sealing leakage, not the earbud
+            val vals = near.filter { !plan.bt || rel[it] > -15.0 }.map { rel[it] }
             if (vals.isNotEmpty()) {
                 val g = (-vals.average()).coerceIn(-12.0, 6.0)
                 eqG[j] = Math.round(g * 2) / 2.0
+            } else if (near.isNotEmpty()) {
+                dropped = true
             }
         }
 
-        val sb = StringBuilder("Suggested EQ (10 bands):\n")
+        val peakDb = if (sigL.isEmpty()) -120.0 else 10 * log10(sigL.max())
+        val outName = devName(outType)
+
+        val sb = StringBuilder()
+        sb.append("Output: $outName   ${micNames[micMode]}\n")
+        sb.append(String.format(Locale.US, "Strongest band: %.0f dBFS\n\n", peakDb))
+        sb.append("Suggested EQ (10 bands):\n")
         for (j in eqF.indices) {
             val label = if (eqF[j] >= 1000) "${(eqF[j] / 1000).toInt()} kHz" else "${eqF[j].toInt()} Hz"
             if (eqG[j].isNaN()) sb.append(String.format(Locale.US, "%7s     n/a\n", label))
             else sb.append(String.format(Locale.US, "%7s  %+5.1f dB\n", label, eqG[j]))
         }
-        sb.append("\nn/a = no clear signal in that band (too quiet or noisy), so no correction is suggested.")
-        sb.append("\nBoosts are limited to +6 dB and cuts to -12 dB. Narrow dips are often room cancellations: do not boost those.")
+        sb.append("\nn/a = no clear signal in that band, so no correction is suggested.")
+        sb.append("\nBoosts are limited to +6 dB and cuts to -12 dB. Narrow dips are often cancellations: do not boost those.")
+        if (plan.bt && !isBtOut(outType)) {
+            sb.append("\n\nWARNING: audio was played through $outName, not the Bluetooth earbuds. Check the connection and test again.")
+        }
+        if (peakDb < -55) {
+            sb.append("\n\nThe signal is very weak. Press the earbud tip against the phone mic hole and raise the volume.")
+        }
+        if (plan.bt && dropped) {
+            sb.append("\n\nSome low bands were more than 15 dB under 1 kHz and were left out: the earbud is probably not sealed against the mic.")
+        }
         ui {
             graph.setData(centers.toDoubleArray(), rel, eqF, eqG)
             result.text = sb.toString()
@@ -537,7 +656,7 @@ class SpectrumView(ctx: Context) : View(ctx) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val wfW = 600
-    private val wfH = 170
+    private val wfH = 360
     private val px = IntArray(wfW * wfH)
     private val bm = Bitmap.createBitmap(wfW, wfH, Bitmap.Config.ARGB_8888)
     private var db = FloatArray(0)
@@ -603,7 +722,6 @@ class SpectrumView(ctx: Context) : View(ctx) {
 
         p.textSize = 10 * d
         p.strokeWidth = 1f
-        p.style = Paint.Style.STROKE
         for (g in 0..5) {
             val v = -20f * g
             p.style = Paint.Style.STROKE
@@ -687,11 +805,14 @@ class ResponseView(ctx: Context) : View(ctx) {
     private var rel = DoubleArray(0)
     private var eqF = DoubleArray(0)
     private var eqG = DoubleArray(0)
+    private var lim = 24.0
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val d = resources.displayMetrics.density
 
     fun setData(fc: DoubleArray, rel: DoubleArray, eqF: DoubleArray, eqG: DoubleArray) {
         this.fc = fc; this.rel = rel; this.eqF = eqF; this.eqG = eqG
+        val m = rel.filter { !it.isNaN() }.maxOfOrNull { abs(it) } ?: 0.0
+        lim = (ceil(m / 12.0) * 12.0).coerceIn(24.0, 48.0)
         invalidate()
     }
 
@@ -703,17 +824,17 @@ class ResponseView(ctx: Context) : View(ctx) {
         val bt = height - 24 * d
         val pw = r - l
         val ph = bt - t
-        val minDb = -24.0
-        val maxDb = 24.0
+        val minDb = -lim
+        val maxDb = lim
         fun x(f: Double) = (l + (log10(f) - log10(20.0)) / (log10(20000.0) - log10(20.0)) * pw).toFloat()
         fun y(db: Double) = (t + (maxDb - db.coerceIn(minDb, maxDb)) / (maxDb - minDb) * ph).toFloat()
 
         p.textSize = 10 * d
         p.strokeWidth = 1f
         var db = minDb
-        while (db <= maxDb) {
+        while (db <= maxDb + 0.01) {
             p.style = Paint.Style.STROKE
-            p.color = if (db == 0.0) Color.GRAY else Color.rgb(50, 50, 70)
+            p.color = if (abs(db) < 0.01) Color.GRAY else Color.rgb(50, 50, 70)
             c.drawLine(l, y(db), r, y(db), p)
             p.style = Paint.Style.FILL
             p.color = Color.LTGRAY
