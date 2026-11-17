@@ -39,6 +39,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Radix-2 FFT with a Hann window. Output power is amplitude^2 (a full-scale sine = 1.0 = 0 dBFS). */
 class Fft(private val n: Int) {
@@ -100,6 +101,36 @@ internal class Plan(val bt: Boolean) {
     val extraRec = if (bt) 2.0 else 1.0
 }
 
+/** Magnitude response (dB) of the 10-band peaking EQ, used to predict the effect of a suggestion. */
+internal object EqMath {
+    fun peakDb(freq: Double, fc: Double, g: Double): Double {
+        val a = 10.0.pow(g / 40)
+        val w0 = 2 * PI * fc / MainActivity.SR
+        val al = sin(w0) / (2 * MainActivity.EQ_Q)
+        val cs = cos(w0)
+        val b0 = 1 + al * a
+        val b1 = -2 * cs
+        val b2 = 1 - al * a
+        val a0 = 1 + al / a
+        val a1 = -2 * cs
+        val a2 = 1 - al / a
+        val w = 2 * PI * freq / MainActivity.SR
+        val nr = b0 + b1 * cos(w) + b2 * cos(2 * w)
+        val ni = b1 * sin(w) + b2 * sin(2 * w)
+        val dr = a0 + a1 * cos(w) + a2 * cos(2 * w)
+        val di = a1 * sin(w) + a2 * sin(2 * w)
+        return 10 * log10((nr * nr + ni * ni) / (dr * dr + di * di))
+    }
+
+    fun responseDb(freq: Double, gains: DoubleArray): Double {
+        var s = 0.0
+        for (j in MainActivity.EQ_CENTERS.indices) {
+            if (abs(gains[j]) > 1e-9) s += peakDb(freq, MainActivity.EQ_CENTERS[j], gains[j])
+        }
+        return s
+    }
+}
+
 class MainActivity : Activity() {
 
     companion object {
@@ -109,14 +140,22 @@ class MainActivity : Activity() {
         const val F0 = 20.0
         const val F1 = 20000.0
         const val SWEEP_SEC = 12.0
+        const val EQ_Q = 1.41
         val BG = Color.rgb(16, 16, 24)
         val FG = Color.rgb(220, 220, 230)
         val EQ_CENTERS = doubleArrayOf(31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
+
+        /** Harman in-ear 2019v2 target in dB relative to 1 kHz, at the 28 third-octave centres 31.5 Hz ... 16 kHz. */
+        val HARMAN_IE = doubleArrayOf(
+            7.7, 7.44, 6.69, 5.59, 4.28, 2.87, 1.44, 0.19, -0.93, -1.58, -1.71, -1.6, -1.4, -1.1,
+            -0.66, 0.0, 1.2, 3.07, 5.8, 8.36, 9.4, 8.88, 7.69, 6.32, 3.58, -0.9, -5.66, -10.2
+        )
     }
 
     private val fft = Fft(N)
     private val pw = DoubleArray(N / 2)
     private val micNames = arrayOf("Mic: Auto", "Mic: Main (MIC)", "Mic: Second (CAMCORDER)")
+    private val targetNames = arrayOf("Target: Flat", "Target: Harman in-ear")
 
     private lateinit var status: TextView
     private lateinit var result: TextView
@@ -127,12 +166,14 @@ class MainActivity : Activity() {
     private lateinit var modeBtn: Button
     private lateinit var micBtn: Button
     private lateinit var eqBtn: Button
+    private lateinit var targetBtn: Button
     @Volatile private var running = false
     @Volatile private var live = false
     @Volatile private var liveStop = false
     @Volatile private var btMode = false
     @Volatile private var micMode = 0
     @Volatile private var eqOn = false
+    @Volatile private var targetMode = 0
     @Volatile private var lastEq: DoubleArray? = null
     private var pending: (() -> Unit)? = null
 
@@ -163,8 +204,11 @@ class MainActivity : Activity() {
                 "Speakers: put the phone where you listen, quiet room, volume about 50%.\n" +
                 "BT earbuds: connect them, set Setup to BT earbuds, press the earbud tip firmly against the " +
                 "phone microphone hole (seal it with your fingers), media volume 70-100%.\n" +
+                "Target: Flat aims for equal level at all frequencies; Harman in-ear aims for the Harman 2019v2 " +
+                "in-ear target (both relative to 1 kHz). The similarity % shows how close the response is to the target " +
+                "(100% = identical, each 1 dB of RMS error costs about 8%).\n" +
                 "EQ in test: after a sweep, switch it On and run again. The sweep is pre-filtered with the suggested " +
-                "EQ, so the grey previous curve and the blue new curve show whether the EQ really flattens the response."
+                "EQ, so the grey previous curve and the blue new curve show whether the EQ really helps."
             setTextColor(FG)
             textSize = 13f
             setPadding(0, pad / 2, 0, pad / 2)
@@ -191,6 +235,13 @@ class MainActivity : Activity() {
                 text = micNames[micMode]
             }
         }
+        targetBtn = Button(this).apply {
+            text = targetNames[0]
+            setOnClickListener {
+                targetMode = (targetMode + 1) % targetNames.size
+                text = targetNames[targetMode]
+            }
+        }
         eqBtn = Button(this).apply {
             text = "EQ in test: Off"
             setOnClickListener {
@@ -210,7 +261,10 @@ class MainActivity : Activity() {
         row2.addView(modeBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         row2.addView(micBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(row2)
-        root.addView(eqBtn)
+        val row3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row3.addView(targetBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row3.addView(eqBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(row3)
         status = TextView(this).apply {
             setTextColor(FG)
             setPadding(0, pad / 2, 0, pad / 2)
@@ -219,7 +273,7 @@ class MainActivity : Activity() {
         spectrum = SpectrumView(this)
         root.addView(spectrum, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (430 * d).toInt()))
         graph = ResponseView(this)
-        root.addView(graph, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (260 * d).toInt()))
+        root.addView(graph, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (280 * d).toInt()))
         result = TextView(this).apply {
             typeface = Typeface.MONOSPACE
             setTextColor(FG)
@@ -265,6 +319,7 @@ class MainActivity : Activity() {
         modeBtn.isEnabled = !locked
         micBtn.isEnabled = !locked
         eqBtn.isEnabled = !locked
+        targetBtn.isEnabled = !locked
     }
 
     private fun startSweep() {
@@ -411,7 +466,7 @@ class MainActivity : Activity() {
             if (abs(g) < 0.05) continue
             val a = 10.0.pow(g / 40)
             val w0 = 2 * PI * EQ_CENTERS[j] / SR
-            val alpha = sin(w0) / (2 * 1.41)
+            val alpha = sin(w0) / (2 * EQ_Q)
             val cs = cos(w0)
             val b0 = 1 + alpha * a
             val b1 = -2 * cs
@@ -460,9 +515,8 @@ class MainActivity : Activity() {
             play[s0 + i] = (sin(phase) * 0.5 * env * 32767).toInt().toShort()
         }
 
-        val eq = lastEq
-        val eqApplied = eqOn && eq != null
-        if (eqApplied && eq != null) applyEq(play, s0, sn, eq)
+        val eq = if (eqOn) lastEq else null
+        if (eq != null) applyEq(play, s0, sn, eq)
 
         val rec = openRecord()
         val track = AudioTrack.Builder()
@@ -524,7 +578,7 @@ class MainActivity : Activity() {
         track.stop(); track.release()
 
         ui { status.text = "Analyzing..." }
-        analyze(buf.copyOf(n), plan, outType, eqApplied)
+        analyze(buf.copyOf(n), plan, outType, eq)
     }
 
     private fun bandpass(x: DoubleArray, from: Int, to: Int, fc: Double, q: Double): DoubleArray {
@@ -546,7 +600,32 @@ class MainActivity : Activity() {
         return y
     }
 
-    private fun analyze(pcm: ShortArray, plan: Plan, outType: Int, eqApplied: Boolean) {
+    /**
+     * Finds the 10 EQ gains that bring the deviation from the target towards zero. The filters overlap,
+     * so the gains are refined a few times using the predicted response of the whole filter chain.
+     */
+    private fun fitEq(dev: DoubleArray, cent: DoubleArray, usable: BooleanArray): DoubleArray {
+        val g = DoubleArray(EQ_CENTERS.size)
+        for (iter in 0 until 4) {
+            val after = DoubleArray(cent.size) {
+                if (usable[it]) dev[it] + EqMath.responseDb(cent[it], g) else Double.NaN
+            }
+            for (j in EQ_CENTERS.indices) {
+                var s = 0.0
+                var c = 0
+                for (k in cent.indices) {
+                    if (usable[k] && abs(ln(cent[k] / EQ_CENTERS[j]) / ln(2.0)) <= 0.34) {
+                        s += after[k]
+                        c++
+                    }
+                }
+                if (c > 0) g[j] = (g[j] - 0.8 * (s / c)).coerceIn(-12.0, 6.0)
+            }
+        }
+        return g
+    }
+
+    private fun analyze(pcm: ShortArray, plan: Plan, outType: Int, appliedEq: DoubleArray?) {
         val n = pcm.size
         if (n < ((plan.sweepAt + SWEEP_SEC) * SR).toInt()) throw IllegalStateException("Recording too short, try again.")
 
@@ -631,7 +710,8 @@ class MainActivity : Activity() {
 
         val snrMin = if (plan.bt) 6.0 else 10.0
         val centers = (-15..12).map { 1000.0 * 2.0.pow(it / 3.0) }
-        val lv = DoubleArray(centers.size) { Double.NaN }
+        val cArr = centers.toDoubleArray()
+        val lv = DoubleArray(cArr.size) { Double.NaN }
         for ((k, fc) in centers.withIndex()) {
             var s = 0.0
             var snrSum = 0.0
@@ -654,38 +734,73 @@ class MainActivity : Activity() {
         val ref = refVals.average()
         val rel = DoubleArray(lv.size) { if (lv[it].isNaN()) Double.NaN else lv[it] - ref }
 
-        val eqF = EQ_CENTERS
-        val eqG = DoubleArray(eqF.size) { Double.NaN }
-        var dropped = false
-        for ((j, f) in eqF.withIndex()) {
-            val near = centers.indices.filter { abs(ln(centers[it] / f) / ln(2.0)) <= 0.34 && !rel[it].isNaN() }
-            // with earbuds, a band more than 15 dB under 1 kHz is almost always sealing leakage, not the earbud
-            val vals = near.filter { !plan.bt || rel[it] > -15.0 }.map { rel[it] }
-            if (vals.isNotEmpty()) {
-                val g = (-vals.average()).coerceIn(-12.0, 6.0)
-                eqG[j] = Math.round(g * 2) / 2.0
-            } else if (near.isNotEmpty()) {
-                dropped = true
-            }
+        // deviation from the chosen target (flat = 0 dB everywhere, or Harman in-ear 2019v2)
+        val tgt = if (targetMode == 1) HARMAN_IE.copyOf() else DoubleArray(cArr.size)
+        val dev = DoubleArray(cArr.size) { if (rel[it].isNaN()) Double.NaN else rel[it] - tgt[it] }
+        // with earbuds, a band more than 15 dB under the target is almost always sealing leakage, not the earbud
+        val usable = BooleanArray(cArr.size) { !dev[it].isNaN() && (!plan.bt || dev[it] > -15.0) }
+
+        val resid = fitEq(dev, cArr, usable)
+        val has = BooleanArray(EQ_CENTERS.size) { j ->
+            cArr.indices.any { usable[it] && abs(ln(cArr[it] / EQ_CENTERS[j]) / ln(2.0)) <= 0.34 }
         }
-        lastEq = DoubleArray(eqG.size) { if (eqG[it].isNaN()) 0.0 else eqG[it] }
+        val dropped = EQ_CENTERS.indices.any { j ->
+            !has[j] && cArr.indices.any { !dev[it].isNaN() && abs(ln(cArr[it] / EQ_CENTERS[j]) / ln(2.0)) <= 0.34 }
+        }
+        // total EQ = what the sweep was already filtered with (EQ in test) + the new residual correction
+        val base = appliedEq ?: DoubleArray(EQ_CENTERS.size)
+        val total = DoubleArray(EQ_CENTERS.size) {
+            if (has[it]) Math.round((base[it] + resid[it]).coerceIn(-12.0, 6.0) * 2) / 2.0 else Double.NaN
+        }
+        val rEff = DoubleArray(EQ_CENTERS.size) { if (total[it].isNaN()) 0.0 else total[it] - base[it] }
+        lastEq = DoubleArray(EQ_CENTERS.size) { if (total[it].isNaN()) base[it] else total[it] }
+
+        val predRel = DoubleArray(cArr.size) {
+            if (rel[it].isNaN()) Double.NaN else rel[it] + EqMath.responseDb(cArr[it], rEff)
+        }
+        val predDev = DoubleArray(cArr.size) { if (predRel[it].isNaN()) Double.NaN else predRel[it] - tgt[it] }
+
+        fun similarity(d: DoubleArray): Double {
+            var s = 0.0
+            var c = 0
+            for (k in cArr.indices) {
+                if (cArr[k] in 100.0..10000.0 && !d[k].isNaN()) {
+                    s += d[k] * d[k]
+                    c++
+                }
+            }
+            if (c < 8) return Double.NaN
+            return max(0.0, 100.0 - sqrt(s / c) * 100.0 / 12.0)
+        }
+        val simNow = similarity(dev)
+        val simAfter = similarity(predDev)
 
         val peakDb = if (sigL.isEmpty()) -120.0 else 10 * log10(sigL.max())
         val outName = devName(outType)
+        val tName = if (targetMode == 1) "Harman in-ear 2019v2" else "flat (0 dB)"
 
         val sb = StringBuilder()
         sb.append("Output: $outName   ${micNames[micMode]}\n")
         sb.append(String.format(Locale.US, "Strongest band: %.0f dBFS\n", peakDb))
-        if (eqApplied) sb.append("EQ in test: ON (the sweep was pre-filtered with the previous suggestion)\n")
-        sb.append("\nSuggested EQ (10 bands)")
-        sb.append(if (eqApplied) " - residual correction on top of the applied EQ:\n" else ":\n")
-        for (j in eqF.indices) {
-            val label = if (eqF[j] >= 1000) "${(eqF[j] / 1000).toInt()} kHz" else "${eqF[j].toInt()} Hz"
-            if (eqG[j].isNaN()) sb.append(String.format(Locale.US, "%7s     n/a\n", label))
-            else sb.append(String.format(Locale.US, "%7s  %+5.1f dB\n", label, eqG[j]))
+        sb.append("Target: $tName\n")
+        if (!simNow.isNaN() && !simAfter.isNaN()) {
+            sb.append(String.format(Locale.US, "Similarity to target (100 Hz - 10 kHz): %.0f%%  ->  %.0f%% with the suggested EQ\n", simNow, simAfter))
+        }
+        if (appliedEq != null) sb.append("EQ in test: ON (the sweep was pre-filtered with the previous EQ; the list below is the new total)\n")
+        sb.append("\nSuggested EQ (10 bands):\n")
+        for (j in EQ_CENTERS.indices) {
+            val label = if (EQ_CENTERS[j] >= 1000) "${(EQ_CENTERS[j] / 1000).toInt()} kHz" else "${EQ_CENTERS[j].toInt()} Hz"
+            if (total[j].isNaN()) {
+                sb.append(String.format(Locale.US, "%7s     n/a\n", label))
+            } else if (appliedEq != null) {
+                sb.append(String.format(Locale.US, "%7s  %+5.1f dB  (new %+4.1f)\n", label, total[j], rEff[j]))
+            } else {
+                sb.append(String.format(Locale.US, "%7s  %+5.1f dB\n", label, total[j]))
+            }
         }
         sb.append("\nn/a = no clear signal in that band, so no correction is suggested.")
         sb.append("\nBoosts are limited to +6 dB and cuts to -12 dB. Narrow dips are often cancellations: do not boost those.")
+        sb.append("\nThe similarity is measured with your phone microphone, not an ear simulator, so treat it as a comparison between runs rather than an absolute score.")
         if (plan.bt && !isBtOut(outType)) {
             sb.append("\n\nWARNING: audio was played through $outName, not the Bluetooth earbuds. Check the connection and test again.")
         }
@@ -693,12 +808,17 @@ class MainActivity : Activity() {
             sb.append("\n\nThe signal is very weak. Press the earbud tip against the phone mic hole and raise the volume.")
         }
         if (plan.bt && dropped) {
-            sb.append("\n\nSome low bands were more than 15 dB under 1 kHz and were left out: the earbud is probably not sealed against the mic.")
+            sb.append("\n\nSome bands were more than 15 dB under the target and were left out of the EQ: the earbud is probably not sealed against the mic.")
+        }
+        val doneText = if (!simNow.isNaN() && !simAfter.isNaN()) {
+            String.format(Locale.US, "Done. Similarity %.0f%% -> %.0f%% with EQ.", simNow, simAfter)
+        } else {
+            "Done."
         }
         ui {
-            graph.setData(centers.toDoubleArray(), rel, eqF, eqG)
+            graph.setData(cArr, rel, tgt, predRel, EQ_CENTERS, total, targetMode == 1)
             result.text = sb.toString()
-            status.text = "Done."
+            status.text = doneText
         }
     }
 }
@@ -857,19 +977,27 @@ class ResponseView(ctx: Context) : View(ctx) {
     private var fc = DoubleArray(0)
     private var rel = DoubleArray(0)
     private var prev = DoubleArray(0)
+    private var tgt = DoubleArray(0)
+    private var pred = DoubleArray(0)
     private var eqF = DoubleArray(0)
     private var eqG = DoubleArray(0)
+    private var showTarget = false
     private var lim = 24.0
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val d = resources.displayMetrics.density
 
-    fun setData(fc: DoubleArray, rel: DoubleArray, eqF: DoubleArray, eqG: DoubleArray) {
+    fun setData(
+        fc: DoubleArray, rel: DoubleArray, tgt: DoubleArray, pred: DoubleArray,
+        eqF: DoubleArray, eqG: DoubleArray, showTarget: Boolean
+    ) {
         val old = this.rel
         prev = if (old.size == rel.size) old else DoubleArray(0)
-        this.fc = fc; this.rel = rel; this.eqF = eqF; this.eqG = eqG
+        this.fc = fc; this.rel = rel; this.tgt = tgt; this.pred = pred
+        this.eqF = eqF; this.eqG = eqG; this.showTarget = showTarget
         var m = 0.0
         for (v in rel) if (!v.isNaN()) m = max(m, abs(v))
         for (v in prev) if (!v.isNaN()) m = max(m, abs(v))
+        if (showTarget) for (v in tgt) m = max(m, abs(v))
         lim = (ceil(m / 12.0) * 12.0).coerceIn(24.0, 48.0)
         invalidate()
     }
@@ -935,6 +1063,20 @@ class ResponseView(ctx: Context) : View(ctx) {
             c.drawPath(curve(fc, prev), p)
         }
 
+        // target curve
+        if (showTarget) {
+            p.style = Paint.Style.STROKE
+            p.strokeWidth = 2 * d
+            p.color = Color.rgb(255, 215, 70)
+            c.drawPath(curve(fc, tgt), p)
+        }
+
+        // predicted response after applying the suggested EQ
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 2 * d
+        p.color = Color.rgb(90, 220, 120)
+        c.drawPath(curve(fc, pred), p)
+
         // measured response (gaps where the signal was too weak)
         p.style = Paint.Style.STROKE
         p.strokeWidth = 3 * d
@@ -960,9 +1102,15 @@ class ResponseView(ctx: Context) : View(ctx) {
         c.drawText("measured (rel. to 1 kHz)", l + 6 * d, t + 12 * d, p)
         p.color = Color.rgb(255, 140, 60)
         c.drawText("suggested EQ", l + 150 * d, t + 12 * d, p)
+        p.color = Color.rgb(90, 220, 120)
+        c.drawText("predicted with EQ", l + 6 * d, t + 24 * d, p)
+        if (showTarget) {
+            p.color = Color.rgb(255, 215, 70)
+            c.drawText("target", l + 150 * d, t + 24 * d, p)
+        }
         p.color = Color.rgb(140, 140, 150)
-        c.drawText("previous run", l + 6 * d, t + 24 * d, p)
+        c.drawText("previous run", l + 6 * d, t + 36 * d, p)
         p.color = Color.GRAY
-        c.drawText("grey dot = no signal", l + 150 * d, t + 24 * d, p)
+        c.drawText("grey dot = no signal", l + 150 * d, t + 36 * d, p)
     }
 }
