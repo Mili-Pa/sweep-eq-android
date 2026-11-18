@@ -49,3 +49,8 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    // WebSocket + HTTP upload for Remote mode
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
