@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.MrCalibrator" parent="android:Theme.Material.NoActionBar" />
+</resources>

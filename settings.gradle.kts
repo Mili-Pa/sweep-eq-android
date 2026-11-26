@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "SweepEQ"
 include(":app")
+include(":mrcal")

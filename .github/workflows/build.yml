@@ -39,7 +39,7 @@ jobs:
 
       - name: Unit tests (algorithm checks)
         continue-on-error: true
-        run: gradle testDebugUnitTest --no-daemon
+        run: gradle :app:testDebugUnitTest --no-daemon
 
       - name: Upload test report
         if: always()
@@ -59,7 +59,7 @@ jobs:
         run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release APK
-        run: gradle assembleRelease --no-daemon
+        run: gradle :app:assembleRelease --no-daemon
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk "SweepEQ-v${{ steps.v.outputs.version }}.apk"

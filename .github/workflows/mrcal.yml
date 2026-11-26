@@ -1,0 +1,61 @@
+name: Mr. calibrator build and release
+
+on:
+  push:
+    branches: [main]
+    paths: ['mrcal/**', 'MRCAL_VERSION', '.github/workflows/mrcal.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Decode signing key
+        run: |
+          mkdir -p signing
+          echo "$KEYSTORE_B64" | base64 -d > signing/sweepeq.keystore
+
+      - name: Read version
+        id: v
+        run: echo "version=$(tr -d '[:space:]' < MRCAL_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed release APK
+        run: gradle :mrcal:assembleRelease --no-daemon
+
+      - name: Name the APK
+        run: cp mrcal/build/outputs/apk/release/mrcal-release.apk "MrCalibrator-v${{ steps.v.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MrCalibrator-v${{ steps.v.outputs.version }}
+          path: MrCalibrator-v${{ steps.v.outputs.version }}.apk
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="mrcal-v${{ steps.v.outputs.version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Bump MRCAL_VERSION to publish a new release."
+          else
+            gh release create "$TAG" "MrCalibrator-v${{ steps.v.outputs.version }}.apk" --target "$GITHUB_SHA" --title "Mr. calibrator $TAG" --generate-notes
+          fi
