@@ -18,6 +18,8 @@ import com.example.sweepeq.Plan
 import com.example.sweepeq.SweepAnalyzer
 import com.example.sweepeq.SweepGen
 import com.example.sweepeq.SweepResult
+import kotlin.math.abs
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
 
@@ -41,6 +43,12 @@ internal class SweepRunner(private val ctx: Context) {
             e.setEnabled(false)
             effects.add(e)
         }
+    }
+
+    private fun peakLevel(pcm: ShortArray, from: Int, to: Int): Float {
+        var pk = 0
+        for (i in max(0, from) until min(to, pcm.size)) pk = max(pk, abs(pcm[i].toInt()))
+        return (20 * log10(max(pk, 1) / 32768.0)).toFloat()
     }
 
     private fun openRecord(micMode: Int): AudioRecord {
@@ -83,11 +91,46 @@ internal class SweepRunner(private val ctx: Context) {
             }
         }
         throw IllegalStateException(
-            if (micMode == 2) "این گوشی میکروفون دوم (CAMCORDER) ندارد." else "میکروفون باز نشد"
+            ctx.getString(if (micMode == 2) R.string.err_mic_second else R.string.err_mic_open)
         )
     }
 
-    fun run(plan: Plan, micMode: Int, onProgress: (Int) -> Unit): SweepResult {
+    /** Live microphone spectrum (no playback). onFrame gets the power spectrum and the input peak in dBFS. */
+    fun live(micMode: Int, stop: () -> Boolean, onFrame: (DoubleArray, Float) -> Unit) {
+        val rec = openRecord(micMode)
+        val fft = Fft(Audio.N)
+        val pw = DoubleArray(Audio.N / 2)
+        val frame = ShortArray(Audio.N)
+        try {
+            rec.startRecording()
+            while (!stop()) {
+                System.arraycopy(frame, Audio.HOP, frame, 0, Audio.N - Audio.HOP)
+                var got = 0
+                while (got < Audio.HOP && !stop()) {
+                    val r = rec.read(frame, Audio.N - Audio.HOP + got, Audio.HOP - got)
+                    if (r < 0) return
+                    got += r
+                }
+                if (got < Audio.HOP) break
+                fft.power(frame, 0, pw)
+                onFrame(pw, peakLevel(frame, Audio.N - Audio.HOP, Audio.N))
+            }
+        } finally {
+            try {
+                rec.stop()
+            } catch (_: Throwable) {
+            }
+            rec.release()
+            releaseEffects()
+        }
+    }
+
+    fun run(
+        plan: Plan,
+        micMode: Int,
+        onFrame: ((DoubleArray, Float) -> Unit)?,
+        onProgress: (Int) -> Unit,
+    ): SweepResult {
         val sr = Audio.SR
         val play = SweepGen.make(plan)
         val rec = openRecord(micMode)
@@ -112,6 +155,9 @@ internal class SweepRunner(private val ctx: Context) {
 
         val recTotal = play.size + (plan.extraRec * sr).toInt()
         val buf = ShortArray(recTotal)
+        val fft = Fft(Audio.N)
+        val pw = DoubleArray(Audio.N / 2)
+        var nextEnd = Audio.N
         var n = 0
         var started = false
         var lastPct = -1
@@ -132,6 +178,13 @@ internal class SweepRunner(private val ctx: Context) {
                         track.routedDevice?.type ?: -1
                     } catch (_: Throwable) {
                         -1
+                    }
+                }
+                if (onFrame != null) {
+                    while (nextEnd <= n) {
+                        fft.power(buf, nextEnd - Audio.N, pw)
+                        onFrame(pw, peakLevel(buf, nextEnd - Audio.HOP, nextEnd))
+                        nextEnd += Audio.HOP
                     }
                 }
                 val pct = n * 100 / recTotal

@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.sweepeq.Cal
@@ -29,6 +32,7 @@ import com.example.sweepeq.Plan
 import com.example.sweepeq.Report
 import com.example.sweepeq.SweepResult
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.ln
 import com.example.sweepeq.Targets as EngineTargets
@@ -80,39 +84,47 @@ private fun ResponseChart(rep: Report) {
     val cT = MaterialTheme.colorScheme.primary
     val cM = MaterialTheme.colorScheme.tertiary
     val grid = MaterialTheme.colorScheme.outlineVariant
-    Canvas(Modifier.fillMaxWidth().height(180.dp)) {
-        val w = size.width
-        val h = size.height
-        val f0 = ln(25.0)
-        val f1 = ln(16000.0)
-        fun x(f: Double): Float = w * ((ln(f) - f0) / (f1 - f0)).toFloat()
-        fun y(v: Double): Float = h / 2f - (v.toFloat().coerceIn(-15f, 15f) / 15f) * (h / 2f)
-        for (g in listOf(-10, -5, 0, 5, 10)) {
-            drawLine(grid, Offset(0f, y(g.toDouble())), Offset(w, y(g.toDouble())), strokeWidth = if (g == 0) 3f else 1f)
-        }
-        fun line(v: DoubleArray, color: Color) {
-            val p = Path()
-            var open = false
-            for (i in v.indices) {
-                if (v[i].isNaN()) {
-                    open = false
-                    continue
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Canvas(Modifier.fillMaxWidth().height(180.dp)) {
+                val w = size.width
+                val h = size.height
+                val f0 = ln(25.0)
+                val f1 = ln(16000.0)
+                fun x(f: Double): Float = w * ((ln(f) - f0) / (f1 - f0)).toFloat()
+                fun y(v: Double): Float = h / 2f - (v.toFloat().coerceIn(-15f, 15f) / 15f) * (h / 2f)
+                for (g in listOf(-10, -5, 0, 5, 10)) {
+                    drawLine(grid, Offset(0f, y(g.toDouble())), Offset(w, y(g.toDouble())), strokeWidth = if (g == 0) 3f else 1f)
                 }
-                if (!open) {
-                    p.moveTo(x(rep.grid[i]), y(v[i]))
-                    open = true
-                } else {
-                    p.lineTo(x(rep.grid[i]), y(v[i]))
+                fun line(v: DoubleArray, color: Color) {
+                    val p = Path()
+                    var open = false
+                    for (i in v.indices) {
+                        if (v[i].isNaN()) {
+                            open = false
+                            continue
+                        }
+                        if (!open) {
+                            p.moveTo(x(rep.grid[i]), y(v[i]))
+                            open = true
+                        } else {
+                            p.lineTo(x(rep.grid[i]), y(v[i]))
+                        }
+                    }
+                    drawPath(p, color, style = Stroke(width = 4f))
                 }
+                line(rep.target, cT)
+                line(rep.rel, cM)
             }
-            drawPath(p, color, style = Stroke(width = 4f))
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LegendItem(cT, stringResource(R.string.legend_target))
+                LegendItem(cM, stringResource(R.string.legend_measured))
+            }
         }
-        line(rep.target, cT)
-        line(rep.rel, cM)
     }
 }
 
-/** The test environment: sweep measurement + the target-curve menu + result applied to Samsung's EQ. */
+/** The test environment: curve menu, sweep measurement, optional Spectroid-style spectrum, result applied to Samsung's EQ. */
 @Composable
 internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Unit) {
     val ctx = LocalContext.current
@@ -126,15 +138,22 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
     var progress by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf("") }
     var report by remember { mutableStateOf<Report?>(null) }
+    val spectrum = remember { SpectrumData() }
+    var showSpectrum by remember { mutableStateOf(false) }
+    var live by remember { mutableStateOf(false) }
+    var pendingLive by remember { mutableStateOf(false) }
+    val stopFlag = remember { AtomicBoolean(false) }
+
+    DisposableEffect(Unit) { onDispose { stopFlag.set(true) } }
 
     fun startSweep() {
         val t = target
         val bands = t?.bandsDb
         if (t == null || bands == null) {
-            status = "برای این کرو مقدار قابل‌استفاده‌ای وجود ندارد؛ کرو دیگری انتخاب کنید."
+            status = ctx.getString(R.string.st_no_data)
             return
         }
-        if (running) return
+        if (running || live) return
         running = true
         progress = 0
         report = null
@@ -142,29 +161,58 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
         val useBt = bt
         val n = runsN
         val mic = micMode
+        val feed = showSpectrum
+        if (feed) spectrum.reset()
         thread {
             try {
                 val runner = SweepRunner(ctx)
                 val plan = Plan(useBt)
                 val results = ArrayList<SweepResult>()
                 for (i in 1..n) {
-                    status = "در حال اندازه‌گیری ($i از $n)... صدا را بلند کنید و سکوت نگه دارید"
-                    results.add(runner.run(plan, mic) { p -> progress = p })
+                    status = ctx.getString(R.string.st_measuring, i, n)
+                    val cb: ((DoubleArray, Float) -> Unit)? = if (feed) { pw, lvl -> spectrum.push(pw, lvl, 0f) } else null
+                    results.add(runner.run(plan, mic, cb) { p -> progress = p })
                 }
-                status = "در حال تحلیل..."
+                status = ctx.getString(R.string.st_analyzing)
                 report = Pipeline.runPeq(results, useBt, 5, Params(), null, 3, false)
-                status = "تمام شد."
+                status = ctx.getString(R.string.st_done)
             } catch (e: Throwable) {
-                status = "خطا: ${e.message}"
+                status = ctx.getString(R.string.st_error, e.message ?: "")
             } finally {
                 running = false
             }
         }
     }
 
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) startSweep() else status = "بدون اجازه میکروفون اندازه‌گیری ممکن نیست."
+    fun startLive() {
+        if (running || live) return
+        live = true
+        stopFlag.set(false)
+        spectrum.reset()
+        status = ctx.getString(R.string.st_live)
+        val mic = micMode
+        thread {
+            try {
+                SweepRunner(ctx).live(mic, { stopFlag.get() }) { pw, lvl -> spectrum.push(pw, lvl, 0.4f) }
+                status = ctx.getString(R.string.st_live_stopped)
+            } catch (e: Throwable) {
+                status = ctx.getString(R.string.st_error, e.message ?: "")
+            } finally {
+                live = false
+            }
+        }
     }
+
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) {
+            if (pendingLive) startLive() else startSweep()
+        } else {
+            status = ctx.getString(R.string.st_no_perm)
+        }
+    }
+
+    fun hasMic(): Boolean =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
@@ -172,21 +220,24 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
     ) {
         ElevatedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("منحنی هدف (Curve)", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.curve_title), style = MaterialTheme.typography.titleMedium)
                 Box {
                     OutlinedButton(onClick = { menuOpen = true }, modifier = Modifier.fillMaxWidth(), enabled = !running) {
-                        Text(target?.let { it.name + " · " + Targets.confidenceLabel(it.confidence) } ?: "انتخاب کرو")
+                        Text(
+                            target?.let { it.name + " · " + stringResource(Targets.confidenceRes(it.confidence)) }
+                                ?: stringResource(R.string.curve_pick)
+                        )
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        Targets.categoryLabels.forEach { (cat, label) ->
+                        Targets.categoryRes.forEach { (cat, labelRes) ->
                             DropdownMenuItem(
-                                text = { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
+                                text = { Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
                                 onClick = {},
                                 enabled = false,
                             )
                             targets.filter { it.category == cat }.forEach { t ->
                                 DropdownMenuItem(
-                                    text = { Text(t.name + " · " + Targets.confidenceLabel(t.confidence)) },
+                                    text = { Text(t.name + " · " + stringResource(Targets.confidenceRes(t.confidence))) },
                                     onClick = { target = t; menuOpen = false; report = null },
                                 )
                             }
@@ -203,66 +254,105 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
 
         ElevatedCard {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("تنظیمات تست", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.test_settings), style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("حالت ایرباد بلوتوثی", Modifier.weight(1f))
+                    Text(stringResource(R.string.bt_mode), Modifier.weight(1f))
                     Switch(checked = bt, onCheckedChange = { bt = it }, enabled = !running)
                 }
-                Text("تعداد اجرا", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.runs_count), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for (i in 1..3) FilterChip(selected = runsN == i, onClick = { runsN = i }, label = { Text("$i") }, enabled = !running)
                 }
-                Text("میکروفون", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.mic_title), style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("خودکار", "MIC", "دوم").forEachIndexed { i, s ->
-                        FilterChip(selected = micMode == i, onClick = { micMode = i }, label = { Text(s) }, enabled = !running)
+                    listOf(R.string.mic_auto, R.string.mic_mic, R.string.mic_second).forEachIndexed { i, res ->
+                        FilterChip(selected = micMode == i, onClick = { micMode = i }, label = { Text(stringResource(res)) }, enabled = !running && !live)
                     }
                 }
-                Text("شدت اعمال روی اکولایزر: ${(strength * 100).toInt()}٪", style = MaterialTheme.typography.labelLarge)
-                Slider(value = strength, onValueChange = { strength = it }, valueRange = 0.25f..1f)
+                Text(stringResource(R.string.strength_label, (strength * 100).toInt()), style = MaterialTheme.typography.labelLarge)
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Slider(value = strength, onValueChange = { strength = it }, valueRange = 0.25f..1f)
+                }
                 Button(
                     onClick = {
-                        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startSweep()
-                        else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        pendingLive = false
+                        if (hasMic()) startSweep() else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                    enabled = !running,
+                    enabled = !running && !live,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (running) "در حال اجرا..." else "شروع تست سوییپ") }
+                ) { Text(stringResource(if (running) R.string.test_running else R.string.start_test)) }
                 if (running) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
                 if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        ElevatedCard {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.spectrum_title), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Switch(checked = showSpectrum, onCheckedChange = { showSpectrum = it })
+                }
+                if (showSpectrum) {
+                    Text(stringResource(R.string.spectrum_hint), style = MaterialTheme.typography.bodySmall)
+                    SpectrumChart(spectrum)
+                    OutlinedButton(
+                        onClick = {
+                            if (live) {
+                                stopFlag.set(true)
+                            } else {
+                                pendingLive = true
+                                if (hasMic()) startLive() else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        enabled = !running,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(if (live) R.string.live_stop else R.string.live_start)) }
+                }
             }
         }
 
         val rep = report
         if (rep != null) {
             val bp = planBands(rep, strength.toDouble())
+            val lowSuffix = stringResource(R.string.band_low_conf)
+            val okMsg = stringResource(R.string.applied_ok)
+            val badMsg = stringResource(R.string.applied_unverified)
             ElevatedCard {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("نتیجه", style = MaterialTheme.typography.titleMedium)
-                    if (!rep.simNow.isNaN())
-                        Text("شباهت فعلی به هدف: %.0f٪ (بیشتر برای مقایسه دو اجرا مناسب است)".format(Locale.US, rep.simNow))
+                    Text(stringResource(R.string.result_title), style = MaterialTheme.typography.titleMedium)
+                    if (!rep.simNow.isNaN()) Text(stringResource(R.string.similarity, Math.round(rep.simNow).toInt()))
                     ResponseChart(rep)
-                    Text("آبی: هدف — سبز: اندازه‌گیری", style = MaterialTheme.typography.bodySmall)
-                    if (rep.unreliable.isNotEmpty())
-                        Text("نواحی کم‌اعتماد: " + rep.unreliable.joinToString(", "), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    SamsungEq.BANDS_HZ.forEachIndexed { i, hz ->
-                        val lbl = if (hz >= 1000) "${hz / 1000}k" else "$hz"
-                        Text("$lbl Hz: %+.1f dB → ${bp.levels[i]}".format(Locale.US, bp.need[i]) + (if (bp.lowConf[i]) "  (اطمینان کم، صفر)" else ""),
-                            style = MaterialTheme.typography.bodySmall)
+                    if (rep.unreliable.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.low_conf_areas, rep.unreliable.joinToString(", ")),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Column {
+                            SamsungEq.BANDS_HZ.forEachIndexed { i, hz ->
+                                val lbl = if (hz >= 1000) "${hz / 1000}k" else "$hz"
+                                Text(
+                                    String.format(Locale.US, "%s Hz: %+.1f dB → %d", lbl, bp.need[i], bp.levels[i]) + (if (bp.lowConf[i]) lowSuffix else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
                     }
                     Button(onClick = {
                         status = SamsungEq.apply(ctx, bp.levels).fold(
-                            { ok -> if (ok) "روی اکولایزر سامسونگ اعمال و تأیید شد ✓" else "ارسال شد، اما مقدار خوانده‌شده یکی نیست." },
-                            { e -> "خطا: ${e.message}" })
-                    }, modifier = Modifier.fillMaxWidth()) { Text("اعمال روی اکولایزر سامسونگ") }
+                            { ok -> if (ok) okMsg else badMsg },
+                            { e -> ctx.getString(R.string.st_error, e.message ?: "") })
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.apply_samsung)) }
                     FilledTonalButton(onClick = { onSendToEq(bp.levels.map { it.toDouble() }) }, modifier = Modifier.fillMaxWidth()) {
-                        Text("انتقال به تب اکولایزر برای ویرایش")
+                        Text(stringResource(R.string.send_to_eq))
                     }
                     OutlinedButton(onClick = {
                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("EQ", peqText(rep)))
-                        status = "EQ پارامتریک (Balanced) کپی شد."
-                    }, modifier = Modifier.fillMaxWidth()) { Text("کپی EQ پارامتریک (Filter n: ON PK ...)") }
+                        status = ctx.getString(R.string.peq_copied)
+                    }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.copy_peq)) }
                 }
             }
         }

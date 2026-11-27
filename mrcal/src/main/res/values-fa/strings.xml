@@ -1,0 +1,69 @@
+<resources>
+    <string name="app_name">Mr. Calibrator</string>
+    <string name="tab_test">تست</string>
+    <string name="tab_eq">اکولایزر</string>
+
+    <string name="curve_title">منحنی هدف (Curve)</string>
+    <string name="curve_pick">یه منحنی انتخاب کن</string>
+    <string name="test_settings">تنظیمات تست</string>
+    <string name="bt_mode">حالت ایرباد بلوتوثی</string>
+    <string name="runs_count">تعداد دفعات اجرا</string>
+    <string name="mic_title">میکروفون</string>
+    <string name="mic_auto">خودکار</string>
+    <string name="mic_mic">MIC</string>
+    <string name="mic_second">میکروفون دوم</string>
+    <string name="strength_label">شدت اعمال روی اکولایزر: %1$d%%</string>
+    <string name="start_test">شروع تست سوییپ</string>
+    <string name="test_running">در حال اجرا…</string>
+    <string name="st_measuring">دارم اندازه می‌گیرم (%1$d از %2$d)… صدا رو بلند کن و ساکت باش</string>
+    <string name="st_analyzing">دارم تحلیل می‌کنم…</string>
+    <string name="st_done">تموم شد.</string>
+    <string name="st_error">خطا: %1$s</string>
+    <string name="st_no_data">برای این منحنی مقدار قابل‌استفاده‌ای نیست، یکی دیگه رو انتخاب کن.</string>
+    <string name="st_no_perm">بدون اجازهٔ میکروفون نمی‌شه اندازه گرفت.</string>
+    <string name="st_live">زنده…</string>
+    <string name="st_live_stopped">حالت زنده متوقف شد.</string>
+    <string name="err_mic_second">این گوشی میکروفون دوم (CAMCORDER) نداره.</string>
+    <string name="err_mic_open">میکروفون باز نشد</string>
+
+    <string name="result_title">نتیجه</string>
+    <string name="similarity">شباهت فعلی به هدف: %1$d%% (بیشتر برای مقایسهٔ دو اجرا به درد می‌خوره)</string>
+    <string name="legend_target">هدف</string>
+    <string name="legend_measured">اندازه‌گیری</string>
+    <string name="low_conf_areas">ناحیه‌های کم‌اطمینان: %1$s</string>
+    <string name="band_low_conf"> (اطمینان کم، صفر شد)</string>
+    <string name="apply_samsung">اعمال روی اکولایزر سامسونگ</string>
+    <string name="applied_ok">اعمال شد و تأیید شد ✓</string>
+    <string name="applied_unverified">فرستاده شد، ولی مقدار خوندهشده فرق داره.</string>
+    <string name="send_to_eq">ببر به تب اکولایزر برای ویرایش</string>
+    <string name="copy_peq">کپی EQ پارامتریک (Filter n: ON PK …)</string>
+    <string name="peq_copied">EQ پارامتریک (Balanced) کپی شد.</string>
+
+    <string name="eq_title">اکولایزر ۹ باندی سامسونگ</string>
+    <string name="read_current">خوندن مقادیر فعلی سامسونگ</string>
+    <string name="current_values">مقادیر فعلی: %1$s</string>
+    <string name="zero_sliders">صفر کردن اسلایدرها</string>
+    <string name="open_samsung">باز کردن صفحهٔ اکولایزر سامسونگ</string>
+
+    <string name="conf_exact">دقیق</string>
+    <string name="conf_high">قابل‌اتکا</string>
+    <string name="conf_medium">متوسط</string>
+    <string name="conf_low">تقریبی</string>
+    <string name="conf_unverified">تأییدنشده</string>
+    <string name="conf_user">سفارشی</string>
+    <string name="conf_unknown">نامشخص</string>
+
+    <string name="cat_home_speakers">اسپیکر خانگی</string>
+    <string name="cat_car_audio">خودرو</string>
+    <string name="cat_home_theater">سینمای خانگی</string>
+    <string name="cat_cinema">سینما</string>
+    <string name="cat_headphones">هدفون</string>
+
+    <string name="spectrum_title">نمودار طیف (سبک Spectroid)</string>
+    <string name="spectrum_hint">حالت زنده ورودی میکروفون رو نشون می‌ده، موقع تست دنبال سوییپ می‌ره و بعدش peak hold روی صفحه می‌مونه.</string>
+    <string name="live_start">طیف زنده</string>
+    <string name="live_stop">توقف زنده</string>
+    <string name="legend_live">طیف</string>
+    <string name="legend_hold">Peak hold</string>
+    <string name="spectrum_peak">قله %1$.0f هرتز  %2$.1f دسی‌بل    قلهٔ ورودی %3$.1f dBFS</string>
+</resources>

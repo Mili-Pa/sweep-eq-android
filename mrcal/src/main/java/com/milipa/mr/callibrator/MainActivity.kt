@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,20 +37,20 @@ fun App() {
     var eqBands by remember { mutableStateOf(List(9) { 0.0 }) }
 
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Mr. calibrator") }) },
+        topBar = { CenterAlignedTopAppBar(title = { Text(stringResource(R.string.app_name)) }) },
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
                     selected = tab == 0,
                     onClick = { tab = 0 },
                     icon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
-                    label = { Text("تست") },
+                    label = { Text(stringResource(R.string.tab_test)) },
                 )
                 NavigationBarItem(
                     selected = tab == 1,
                     onClick = { tab = 1 },
                     icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    label = { Text("اکولایزر") },
+                    label = { Text(stringResource(R.string.tab_eq)) },
                 )
             }
         },

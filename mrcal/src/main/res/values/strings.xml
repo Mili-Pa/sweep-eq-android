@@ -1,1 +1,69 @@
-<resources><string name="app_name">Mr. calibrator</string></resources>
+<resources>
+    <string name="app_name">Mr. Calibrator</string>
+    <string name="tab_test">Test</string>
+    <string name="tab_eq">Equalizer</string>
+
+    <string name="curve_title">Target curve</string>
+    <string name="curve_pick">Choose a curve</string>
+    <string name="test_settings">Test settings</string>
+    <string name="bt_mode">Bluetooth earbuds mode</string>
+    <string name="runs_count">Number of runs</string>
+    <string name="mic_title">Microphone</string>
+    <string name="mic_auto">Auto</string>
+    <string name="mic_mic">MIC</string>
+    <string name="mic_second">Second mic</string>
+    <string name="strength_label">Strength applied to the EQ: %1$d%%</string>
+    <string name="start_test">Start sweep test</string>
+    <string name="test_running">Running…</string>
+    <string name="st_measuring">Measuring (%1$d of %2$d)… raise the volume and keep quiet</string>
+    <string name="st_analyzing">Analyzing…</string>
+    <string name="st_done">Done.</string>
+    <string name="st_error">Error: %1$s</string>
+    <string name="st_no_data">This curve has no usable values, pick another one.</string>
+    <string name="st_no_perm">Without microphone permission, measuring isn\'t possible.</string>
+    <string name="st_live">Live…</string>
+    <string name="st_live_stopped">Live stopped.</string>
+    <string name="err_mic_second">This phone has no second microphone (CAMCORDER).</string>
+    <string name="err_mic_open">Couldn\'t open the microphone</string>
+
+    <string name="result_title">Result</string>
+    <string name="similarity">Current match to the target: %1$d%% (best used to compare two runs)</string>
+    <string name="legend_target">Target</string>
+    <string name="legend_measured">Measured</string>
+    <string name="low_conf_areas">Low-confidence areas: %1$s</string>
+    <string name="band_low_conf"> (low confidence, set to 0)</string>
+    <string name="apply_samsung">Apply to Samsung equalizer</string>
+    <string name="applied_ok">Applied and verified ✓</string>
+    <string name="applied_unverified">Sent, but the value read back doesn\'t match.</string>
+    <string name="send_to_eq">Send to Equalizer tab to edit</string>
+    <string name="copy_peq">Copy parametric EQ (Filter n: ON PK …)</string>
+    <string name="peq_copied">Parametric EQ (Balanced) copied.</string>
+
+    <string name="eq_title">Samsung 9-band equalizer</string>
+    <string name="read_current">Read current Samsung values</string>
+    <string name="current_values">Current values: %1$s</string>
+    <string name="zero_sliders">Reset sliders</string>
+    <string name="open_samsung">Open Samsung equalizer screen</string>
+
+    <string name="conf_exact">Exact</string>
+    <string name="conf_high">Reliable</string>
+    <string name="conf_medium">Medium</string>
+    <string name="conf_low">Approximate</string>
+    <string name="conf_unverified">Unverified</string>
+    <string name="conf_user">Custom</string>
+    <string name="conf_unknown">Unknown</string>
+
+    <string name="cat_home_speakers">Home speakers</string>
+    <string name="cat_car_audio">Car audio</string>
+    <string name="cat_home_theater">Home theater</string>
+    <string name="cat_cinema">Cinema</string>
+    <string name="cat_headphones">Headphones</string>
+
+    <string name="spectrum_title">Spectrum (Spectroid style)</string>
+    <string name="spectrum_hint">Live shows the mic input, during the test it follows the sweep, and afterwards the peak hold stays on screen.</string>
+    <string name="live_start">Live spectrum</string>
+    <string name="live_stop">Stop live</string>
+    <string name="legend_live">Spectrum</string>
+    <string name="legend_hold">Peak hold</string>
+    <string name="spectrum_peak">Peak %1$.0f Hz  %2$.1f dB    Input peak %3$.1f dBFS</string>
+</resources>
