@@ -25,13 +25,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.sweepeq.AutoEq
+import com.example.sweepeq.AutoEqPipeline
 import com.example.sweepeq.Cal
+import com.example.sweepeq.Features
 import com.example.sweepeq.Params
 import com.example.sweepeq.Pipeline
 import com.example.sweepeq.Plan
 import com.example.sweepeq.Report
 import com.example.sweepeq.SweepResult
 import java.util.Locale
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlin.math.ln
@@ -40,33 +44,54 @@ import com.example.sweepeq.Targets as EngineTargets
 /** Grid indices (25 Hz * 2^(i/12)) closest to the nine Samsung bands. */
 private val IDX = intArrayOf(16, 28, 40, 52, 64, 76, 88, 100, 112)
 
-private class BandPlan(val levels: IntArray, val lowConf: BooleanArray, val need: DoubleArray)
+private class BandPlan(
+    val levels: IntArray,
+    val lowConf: BooleanArray,
+    val gains: DoubleArray,
+    val simNow: Double,
+    val simPred: Double,
+)
 
+/** Match to the target after removing the overall level offset (a level change is not a tonal error). */
+private fun simCentered(grid: DoubleArray, d: DoubleArray): Double {
+    var s = 0.0
+    var c = 0
+    for (i in grid.indices) {
+        if (grid[i] >= 100.0 && grid[i] <= 10000.0 && !d[i].isNaN()) {
+            s += d[i]
+            c++
+        }
+    }
+    val m = if (c > 0) s / c else 0.0
+    return Pipeline.similarity(grid, DoubleArray(d.size) { d[it] - m })
+}
+
+/** Shaped (AutoEq-style) correction curve fitted to the nine Samsung bands, integer steps within +-10. */
 private fun planBands(rep: Report, strength: Double): BandPlan {
-    val need = DoubleArray(9)
+    val n = rep.grid.size
+    val mask = Features.ignoreMask(rep.grid, rep.features)
+    val eq = AutoEq.shape(rep.grid, rep.resid, rep.conf, mask, 6.0, -8.0, 0.6)
+    val tgt = DoubleArray(n) { eq[it] * strength }
+    val w = DoubleArray(n) {
+        val f = rep.grid[it]
+        if (rep.resid[it].isNaN() || mask[it] || rep.conf[it] < 0.2 || f < 50.0 || f > 18000.0) 0.0 else rep.conf[it]
+    }
+    val centers = DoubleArray(9) { SamsungEq.BANDS_HZ[it].toDouble() }
+    val fit = AutoEq.fitGraphic(rep.grid, tgt, w, centers, 10)
     val low = BooleanArray(9)
-    val lv = IntArray(9)
     for (k in 0 until 9) {
-        var s = 0.0
-        var c = 0
         var cf = 0.0
+        var c = 0
         for (i in (IDX[k] - 2)..(IDX[k] + 2)) {
-            if (i < 0 || i >= rep.grid.size) continue
-            val r = rep.resid[i]
-            if (r.isNaN()) continue
-            s += r
+            if (i < 0 || i >= n) continue
+            if (rep.resid[i].isNaN()) continue
             cf += rep.conf[i]
             c++
         }
-        if (c == 0 || cf / c < 0.3) {
-            low[k] = true
-            need[k] = 0.0
-        } else {
-            need[k] = -s / c
-        }
-        lv[k] = SamsungEq.clamp(need[k] * strength)
+        low[k] = c == 0 || cf / c < 0.3
     }
-    return BandPlan(lv, low, need)
+    val dev = DoubleArray(n) { if (rep.resid[it].isNaN()) Double.NaN else rep.resid[it] + fit.response[it] }
+    return BandPlan(fit.levels, low, fit.gains, simCentered(rep.grid, rep.resid), simCentered(rep.grid, dev))
 }
 
 private fun peqText(rep: Report): String {
@@ -124,11 +149,17 @@ private fun ResponseChart(rep: Report) {
     }
 }
 
-/** The test environment: curve menu, sweep measurement, optional Spectroid-style spectrum, result applied to Samsung's EQ. */
+/** The test environment: curve menu, sweep measurement, optional spectrum, result applied to Samsung's EQ. */
 @Composable
-internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Unit) {
+internal fun TestScreen(
+    targets: List<Target>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    onOpenLibrary: () -> Unit,
+    onSendToEq: (List<Double>) -> Unit,
+) {
     val ctx = LocalContext.current
-    var target by remember { mutableStateOf(targets.firstOrNull { it.id == "harman_in_room" }) }
+    val target = targets.firstOrNull { it.id == selectedId } ?: targets.firstOrNull()
     var menuOpen by remember { mutableStateOf(false) }
     var bt by remember { mutableStateOf(false) }
     var runsN by remember { mutableIntStateOf(1) }
@@ -143,8 +174,14 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
     var live by remember { mutableStateOf(false) }
     var pendingLive by remember { mutableStateOf(false) }
     val stopFlag = remember { AtomicBoolean(false) }
+    val cancelFlag = remember { AtomicBoolean(false) }
 
-    DisposableEffect(Unit) { onDispose { stopFlag.set(true) } }
+    DisposableEffect(Unit) {
+        onDispose {
+            stopFlag.set(true)
+            cancelFlag.set(true)
+        }
+    }
 
     fun startSweep() {
         val t = target
@@ -157,7 +194,14 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
         running = true
         progress = 0
         report = null
-        EngineTargets.custom = Cal(DoubleArray(9) { SamsungEq.BANDS_HZ[it].toDouble() }, bands)
+        cancelFlag.set(false)
+        val cf = t.curveF
+        val cd = t.curveDb
+        EngineTargets.custom = if (cf != null && cd != null && cf.size == cd.size && cf.size >= 2) {
+            Cal(cf, cd)
+        } else {
+            Cal(DoubleArray(9) { SamsungEq.BANDS_HZ[it].toDouble() }, bands)
+        }
         val useBt = bt
         val n = runsN
         val mic = micMode
@@ -170,12 +214,26 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
                 val results = ArrayList<SweepResult>()
                 for (i in 1..n) {
                     status = ctx.getString(R.string.st_measuring, i, n)
-                    val cb: ((DoubleArray, Float) -> Unit)? = if (feed) { pw, lvl -> spectrum.push(pw, lvl, 0f) } else null
-                    results.add(runner.run(plan, mic, cb) { p -> progress = p })
+                    val cb: ((DoubleArray, Float) -> Unit)? = if (feed) {
+                        { pw, lvl ->
+                            if (cancelFlag.get()) throw CancellationException()
+                            spectrum.push(pw, lvl, 0f)
+                        }
+                    } else {
+                        null
+                    }
+                    results.add(
+                        runner.run(plan, mic, cb) { p ->
+                            if (cancelFlag.get()) throw CancellationException()
+                            progress = p
+                        }
+                    )
                 }
                 status = ctx.getString(R.string.st_analyzing)
-                report = Pipeline.runPeq(results, useBt, 5, Params(), null, 3, false)
+                report = AutoEqPipeline.runPeq(results, useBt, 5, Params(), null, 3, false)
                 status = ctx.getString(R.string.st_done)
+            } catch (e: CancellationException) {
+                status = ctx.getString(R.string.st_canceled)
             } catch (e: Throwable) {
                 status = ctx.getString(R.string.st_error, e.message ?: "")
             } finally {
@@ -230,25 +288,29 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         Targets.categoryRes.forEach { (cat, labelRes) ->
-                            DropdownMenuItem(
-                                text = { Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
-                                onClick = {},
-                                enabled = false,
-                            )
-                            targets.filter { it.category == cat }.forEach { t ->
+                            val items = targets.filter { it.category == cat }
+                            if (items.isNotEmpty()) {
                                 DropdownMenuItem(
-                                    text = { Text(t.name + " · " + stringResource(Targets.confidenceRes(t.confidence))) },
-                                    onClick = { target = t; menuOpen = false; report = null },
+                                    text = { Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
+                                    onClick = {},
+                                    enabled = false,
                                 )
+                                items.forEach { t ->
+                                    DropdownMenuItem(
+                                        text = { Text(t.name + " · " + stringResource(Targets.confidenceRes(t.confidence))) },
+                                        onClick = { onSelect(t.id); menuOpen = false; report = null },
+                                    )
+                                }
                             }
                         }
                     }
                 }
                 target?.let { t ->
-                    Text(t.application, style = MaterialTheme.typography.bodyMedium)
-                    Text(t.sourceNote, style = MaterialTheme.typography.bodySmall)
+                    if (t.application.isNotEmpty()) Text(t.application, style = MaterialTheme.typography.bodyMedium)
+                    if (t.sourceNote.isNotEmpty()) Text(t.sourceNote, style = MaterialTheme.typography.bodySmall)
                     t.limitations.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
+                TextButton(onClick = onOpenLibrary) { Text(stringResource(R.string.open_library)) }
             }
         }
 
@@ -273,15 +335,26 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Slider(value = strength, onValueChange = { strength = it }, valueRange = 0.25f..1f)
                 }
-                Button(
-                    onClick = {
-                        pendingLive = false
-                        if (hasMic()) startSweep() else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    },
-                    enabled = !running && !live,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(stringResource(if (running) R.string.test_running else R.string.start_test)) }
-                if (running) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+                if (running) {
+                    Button(
+                        onClick = { cancelFlag.set(true) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                    ) { Text(stringResource(R.string.cancel_test)) }
+                    LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+                } else {
+                    Button(
+                        onClick = {
+                            pendingLive = false
+                            if (hasMic()) startSweep() else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                        enabled = !live,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.start_test)) }
+                }
                 if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodyMedium)
             }
         }
@@ -320,7 +393,9 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
             ElevatedCard {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.result_title), style = MaterialTheme.typography.titleMedium)
-                    if (!rep.simNow.isNaN()) Text(stringResource(R.string.similarity, Math.round(rep.simNow).toInt()))
+                    if (!bp.simNow.isNaN() && !bp.simPred.isNaN()) {
+                        Text(stringResource(R.string.pred_similarity, Math.round(bp.simNow).toInt(), Math.round(bp.simPred).toInt()))
+                    }
                     ResponseChart(rep)
                     if (rep.unreliable.isNotEmpty()) {
                         Text(
@@ -334,7 +409,7 @@ internal fun TestScreen(targets: List<Target>, onSendToEq: (List<Double>) -> Uni
                             SamsungEq.BANDS_HZ.forEachIndexed { i, hz ->
                                 val lbl = if (hz >= 1000) "${hz / 1000}k" else "$hz"
                                 Text(
-                                    String.format(Locale.US, "%s Hz: %+.1f dB → %d", lbl, bp.need[i], bp.levels[i]) + (if (bp.lowConf[i]) lowSuffix else ""),
+                                    String.format(Locale.US, "%s Hz: %+.1f dB → %d", lbl, bp.gains[i], bp.levels[i]) + (if (bp.lowConf[i]) lowSuffix else ""),
                                     style = MaterialTheme.typography.bodySmall,
                                 )
                             }

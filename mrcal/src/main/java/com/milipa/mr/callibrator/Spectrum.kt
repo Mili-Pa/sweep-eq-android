@@ -1,5 +1,6 @@
 package com.milipa.mr.callibrator
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -11,27 +12,69 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import com.example.sweepeq.Audio
 import kotlin.math.ceil
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.pow
 
-/** Spectrum frames fed from the audio thread; Compose redraws when db/hold change. */
+/** Spectrum frames fed from the audio thread; Compose redraws when db/hold/wfVersion change. */
 internal class SpectrumData {
     var db by mutableStateOf(FloatArray(0))
     var hold by mutableStateOf(FloatArray(0))
     var level by mutableFloatStateOf(-120f)
+    var wfVersion by mutableIntStateOf(0)
+
+    val wfW = 400
+    val wfH = 160
+    private val px = IntArray(wfW * wfH)
+    val bitmap: Bitmap = Bitmap.createBitmap(wfW, wfH, Bitmap.Config.ARGB_8888)
+    private val pal = IntArray(256)
+    private val binHz = Audio.SR.toDouble() / Audio.N
+    private val ratio = Audio.F1 / Audio.F0
+
+    init {
+        setPalette(0xFF101010.toInt(), 0xFF4CAF50.toInt(), 0xFFFFC107.toInt())
+        clearWaterfall()
+    }
+
+    /** Waterfall colours come from the app's colour palette (dark -> primary -> tertiary). */
+    fun setPalette(c0: Int, c1: Int, c2: Int) {
+        for (i in 0 until 256) {
+            val t = i / 255f
+            pal[i] = if (t < 0.6f) ColorUtils.blendARGB(c0, c1, t / 0.6f) else ColorUtils.blendARGB(c1, c2, (t - 0.6f) / 0.4f)
+        }
+    }
+
+    private fun clearWaterfall() {
+        px.fill(pal[0])
+        bitmap.setPixels(px, 0, wfW, 0, 0, wfW, wfH)
+        wfVersion++
+    }
 
     fun reset() {
         db = FloatArray(0)
         hold = FloatArray(0)
         level = -120f
+        clearWaterfall()
+    }
+
+    private fun maxIn(a: FloatArray, fa: Double, fb: Double): Float {
+        val k1 = (fa / binHz).toInt().coerceIn(0, a.size - 1)
+        val k2 = ceil(fb / binHz).toInt().coerceIn(k1, a.size - 1)
+        var m = a[k1]
+        for (k in k1..k2) if (a[k] > m) m = a[k]
+        return m
     }
 
     /** decay = dB per frame the hold line falls (0 = true peak hold, kept after the test). */
@@ -39,9 +82,19 @@ internal class SpectrumData {
         val d = FloatArray(pw.size) { (10 * log10(pw[it] + 1e-12)).toFloat() }
         val h = hold
         val nh = FloatArray(pw.size) { if (it < h.size) max(d[it], h[it] - decay) else d[it] }
+        System.arraycopy(px, 0, px, wfW, wfW * (wfH - 1))
+        for (x in 0 until wfW) {
+            val fa = Audio.F0 * ratio.pow(x.toDouble() / wfW)
+            val fb = Audio.F0 * ratio.pow((x + 1).toDouble() / wfW)
+            val v = maxIn(d, fa, fb)
+            val idx = (((v + 100f) / 80f).coerceIn(0f, 1f) * 255f).toInt()
+            px[x] = pal[idx]
+        }
+        bitmap.setPixels(px, 0, wfW, 0, 0, wfW, wfH)
         db = d
         hold = nh
         level = lvl
+        wfVersion++
     }
 }
 
@@ -59,6 +112,11 @@ internal fun SpectrumChart(data: SpectrumData) {
     val lineC = MaterialTheme.colorScheme.primary
     val holdC = MaterialTheme.colorScheme.tertiary
     val gridC = MaterialTheme.colorScheme.outlineVariant
+    val c0 = MaterialTheme.colorScheme.surfaceContainerLowest.toArgb()
+    val c1 = lineC.toArgb()
+    val c2 = holdC.toArgb()
+    SideEffect { data.setPalette(c0, c1, c2) }
+
     val db = data.db
     val hold = data.hold
     val binHz = Audio.SR.toDouble() / Audio.N
@@ -130,6 +188,18 @@ internal fun SpectrumChart(data: SpectrumData) {
                     val frac = (log10(f / f0) / log10(ratio)).toFloat()
                     Text(s, style = MaterialTheme.typography.labelSmall, modifier = Modifier.offset(x = (wDp * frac - 10.dp).coerceAtLeast(0.dp)))
                 }
+            }
+            Text(stringResource(R.string.wf_label), style = MaterialTheme.typography.labelMedium)
+            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+                @Suppress("UNUSED_VARIABLE")
+                val version = data.wfVersion
+                drawImage(
+                    image = data.bitmap.asImageBitmap(),
+                    srcOffset = IntOffset.Zero,
+                    srcSize = IntSize(data.wfW, data.wfH),
+                    dstOffset = IntOffset.Zero,
+                    dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 LegendItem(lineC, stringResource(R.string.legend_live))
