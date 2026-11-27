@@ -1,0 +1,48 @@
+Mr. Calibrator - third-party notices
+
+1) AutoEq (MIT License)
+
+The equalization-curve shaping in this app (smoothing with a wide treble window, slope limiting with
+peak/dip protection, treble gain factor, the sharpness limit for peaking filters and the fixed-band
+graphic-EQ fitting) follows the approach of AutoEq, https://github.com/jaakkopasanen/AutoEq.
+The values of the Harman Over-Ear 2018, Harman Over-Ear 2015 and ISO 11904-1 diffuse-field targets were
+sampled from the target files in that repository.
+
+MIT License
+
+Copyright (c) 2018-2022 Jaakko Pasanen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+2) Vazirmatn font (SIL Open Font License 1.1)
+
+The Persian user interface uses the Vazirmatn font, https://github.com/rastikerdar/vazirmatn,
+licensed under the SIL Open Font License 1.1. The font files and the full licence text are downloaded
+from the project's release tag when the app is built and are bundled with it.
+
+3) Reference curves and standards
+
+The B&K house curve, the X-curve (ISO 2969 / SMPTE) and the Harman target curves are published research and
+standards. Only numeric values describing their shapes are used here; no text of the standards is
+reproduced. Names of products and companies belong to their owners.
+
+4) Samsung
+
+This app is not affiliated with or endorsed by Samsung. It talks to the system app "Sound quality and
+effects" (com.sec.android.app.soundalive) through the content provider that app exports.

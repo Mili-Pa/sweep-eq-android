@@ -1,10 +1,12 @@
 <resources>
     <string name="app_name">Mr. Calibrator</string>
     <string name="tab_test">تست</string>
+    <string name="tab_library">منحنی‌ها</string>
     <string name="tab_eq">اکولایزر</string>
 
     <string name="curve_title">منحنی هدف (Curve)</string>
     <string name="curve_pick">یه منحنی انتخاب کن</string>
+    <string name="open_library">باز کردن کتابخانهٔ منحنی‌ها</string>
     <string name="test_settings">تنظیمات تست</string>
     <string name="bt_mode">حالت ایرباد بلوتوثی</string>
     <string name="runs_count">تعداد دفعات اجرا</string>
@@ -15,6 +17,8 @@
     <string name="strength_label">شدت اعمال روی اکولایزر: %1$d%%</string>
     <string name="start_test">شروع تست سوییپ</string>
     <string name="test_running">در حال اجرا…</string>
+    <string name="cancel_test">لغو تست</string>
+    <string name="st_canceled">تست لغو شد.</string>
     <string name="st_measuring">دارم اندازه می‌گیرم (%1$d از %2$d)… صدا رو بلند کن و ساکت باش</string>
     <string name="st_analyzing">دارم تحلیل می‌کنم…</string>
     <string name="st_done">تموم شد.</string>
@@ -28,22 +32,51 @@
 
     <string name="result_title">نتیجه</string>
     <string name="similarity">شباهت فعلی به هدف: %1$d%% (بیشتر برای مقایسهٔ دو اجرا به درد می‌خوره)</string>
+    <string name="pred_similarity">شباهت به هدف: الان %1$d%%، بعد از اعمال حدوداً %2$d%% (بیشتر برای مقایسهٔ اجراها به درد می‌خوره)</string>
     <string name="legend_target">هدف</string>
     <string name="legend_measured">اندازه‌گیری</string>
     <string name="low_conf_areas">ناحیه‌های کم‌اطمینان: %1$s</string>
-    <string name="band_low_conf"> (اطمینان کم، صفر شد)</string>
+    <string name="band_low_conf"> (اطمینان کم)</string>
     <string name="apply_samsung">اعمال روی اکولایزر سامسونگ</string>
     <string name="applied_ok">اعمال شد و تأیید شد ✓</string>
-    <string name="applied_unverified">فرستاده شد، ولی مقدار خوندهشده فرق داره.</string>
+    <string name="applied_unverified">فرستاده شد، ولی مقدار خونده‌شده فرق داره.</string>
     <string name="send_to_eq">ببر به تب اکولایزر برای ویرایش</string>
     <string name="copy_peq">کپی EQ پارامتریک (Filter n: ON PK …)</string>
     <string name="peq_copied">EQ پارامتریک (Balanced) کپی شد.</string>
 
     <string name="eq_title">اکولایزر ۹ باندی سامسونگ</string>
+    <string name="bands_title">باندها</string>
+    <string name="groups_title">دسته‌های صدا</string>
+    <string name="grp_bass">باس</string>
+    <string name="grp_vocals">صدای خواننده</string>
+    <string name="grp_instruments">صدای سازها</string>
+    <string name="grp_other">بقیهٔ صداها</string>
     <string name="read_current">خوندن مقادیر فعلی سامسونگ</string>
     <string name="current_values">مقادیر فعلی: %1$s</string>
     <string name="zero_sliders">صفر کردن اسلایدرها</string>
     <string name="open_samsung">باز کردن صفحهٔ اکولایزر سامسونگ</string>
+
+    <string name="presets_title">تنظیمات ذخیره‌شدهٔ اکولایزر</string>
+    <string name="preset_save">ذخیرهٔ مقادیر فعلی</string>
+    <string name="preset_name">اسم</string>
+    <string name="preset_default_name">پریست %1$d</string>
+    <string name="preset_load">بارگذاری</string>
+    <string name="preset_rename">تغییر اسم</string>
+    <string name="preset_delete">حذف</string>
+    <string name="preset_empty">هنوز چیزی ذخیره نکردی.</string>
+
+    <string name="library_title">کتابخانهٔ منحنی‌ها</string>
+    <string name="library_new">منحنی جدید</string>
+    <string name="library_edit">ویرایش</string>
+    <string name="library_delete">حذف</string>
+    <string name="library_use">استفاده برای تست</string>
+    <string name="library_selected">در حال استفاده</string>
+    <string name="library_name">اسم منحنی</string>
+    <string name="library_save">ذخیره</string>
+    <string name="library_cancel">انصراف</string>
+    <string name="library_import_csv">وارد کردن CSV (فرکانس، dB)</string>
+    <string name="library_delete_confirm">«%1$s» حذف بشه؟</string>
+    <string name="library_csv_bad">فایل معتبر نیست؛ باید ستون فرکانس و dB داشته باشه و از ۶۳ تا ۱۶۰۰۰ هرتز رو پوشش بده.</string>
 
     <string name="conf_exact">دقیق</string>
     <string name="conf_high">قابل‌اتکا</string>
@@ -58,12 +91,18 @@
     <string name="cat_home_theater">سینمای خانگی</string>
     <string name="cat_cinema">سینما</string>
     <string name="cat_headphones">هدفون</string>
+    <string name="cat_user">منحنی‌های من</string>
 
-    <string name="spectrum_title">نمودار طیف (سبک Spectroid)</string>
+    <string name="spectrum_title">نمودار طیف</string>
     <string name="spectrum_hint">حالت زنده ورودی میکروفون رو نشون می‌ده، موقع تست دنبال سوییپ می‌ره و بعدش peak hold روی صفحه می‌مونه.</string>
     <string name="live_start">طیف زنده</string>
     <string name="live_stop">توقف زنده</string>
     <string name="legend_live">طیف</string>
     <string name="legend_hold">Peak hold</string>
+    <string name="wf_label">آبشار (جدیدترین بالاست)</string>
     <string name="spectrum_peak">قله %1$.0f هرتز  %2$.1f دسی‌بل    قلهٔ ورودی %3$.1f dBFS</string>
+
+    <string name="about_title">دربارهٔ برنامه و مجوزها</string>
+    <string name="about_open">دربارهٔ برنامه و مجوزها</string>
+    <string name="ok_btn">باشه</string>
 </resources>

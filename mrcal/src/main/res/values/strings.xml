@@ -1,10 +1,12 @@
 <resources>
     <string name="app_name">Mr. Calibrator</string>
     <string name="tab_test">Test</string>
+    <string name="tab_library">Curves</string>
     <string name="tab_eq">Equalizer</string>
 
     <string name="curve_title">Target curve</string>
     <string name="curve_pick">Choose a curve</string>
+    <string name="open_library">Open curve library</string>
     <string name="test_settings">Test settings</string>
     <string name="bt_mode">Bluetooth earbuds mode</string>
     <string name="runs_count">Number of runs</string>
@@ -15,6 +17,8 @@
     <string name="strength_label">Strength applied to the EQ: %1$d%%</string>
     <string name="start_test">Start sweep test</string>
     <string name="test_running">Running…</string>
+    <string name="cancel_test">Cancel test</string>
+    <string name="st_canceled">Test canceled.</string>
     <string name="st_measuring">Measuring (%1$d of %2$d)… raise the volume and keep quiet</string>
     <string name="st_analyzing">Analyzing…</string>
     <string name="st_done">Done.</string>
@@ -28,10 +32,11 @@
 
     <string name="result_title">Result</string>
     <string name="similarity">Current match to the target: %1$d%% (best used to compare two runs)</string>
+    <string name="pred_similarity">Match to the target: now %1$d%%, predicted after applying about %2$d%% (best used to compare runs)</string>
     <string name="legend_target">Target</string>
     <string name="legend_measured">Measured</string>
     <string name="low_conf_areas">Low-confidence areas: %1$s</string>
-    <string name="band_low_conf"> (low confidence, set to 0)</string>
+    <string name="band_low_conf"> (low confidence)</string>
     <string name="apply_samsung">Apply to Samsung equalizer</string>
     <string name="applied_ok">Applied and verified ✓</string>
     <string name="applied_unverified">Sent, but the value read back doesn\'t match.</string>
@@ -40,10 +45,38 @@
     <string name="peq_copied">Parametric EQ (Balanced) copied.</string>
 
     <string name="eq_title">Samsung 9-band equalizer</string>
+    <string name="bands_title">Bands</string>
+    <string name="groups_title">Sound groups</string>
+    <string name="grp_bass">Bass</string>
+    <string name="grp_vocals">Vocals</string>
+    <string name="grp_instruments">Instruments</string>
+    <string name="grp_other">Other sounds</string>
     <string name="read_current">Read current Samsung values</string>
     <string name="current_values">Current values: %1$s</string>
     <string name="zero_sliders">Reset sliders</string>
     <string name="open_samsung">Open Samsung equalizer screen</string>
+
+    <string name="presets_title">Saved equalizer settings</string>
+    <string name="preset_save">Save current values</string>
+    <string name="preset_name">Name</string>
+    <string name="preset_default_name">Preset %1$d</string>
+    <string name="preset_load">Load</string>
+    <string name="preset_rename">Rename</string>
+    <string name="preset_delete">Delete</string>
+    <string name="preset_empty">Nothing saved yet.</string>
+
+    <string name="library_title">Curve library</string>
+    <string name="library_new">New curve</string>
+    <string name="library_edit">Edit</string>
+    <string name="library_delete">Delete</string>
+    <string name="library_use">Use for test</string>
+    <string name="library_selected">In use</string>
+    <string name="library_name">Curve name</string>
+    <string name="library_save">Save</string>
+    <string name="library_cancel">Cancel</string>
+    <string name="library_import_csv">Import CSV (frequency, dB)</string>
+    <string name="library_delete_confirm">Delete “%1$s”?</string>
+    <string name="library_csv_bad">Not a valid file: it needs frequency and dB columns covering 63 to 16000 Hz.</string>
 
     <string name="conf_exact">Exact</string>
     <string name="conf_high">Reliable</string>
@@ -58,12 +91,18 @@
     <string name="cat_home_theater">Home theater</string>
     <string name="cat_cinema">Cinema</string>
     <string name="cat_headphones">Headphones</string>
+    <string name="cat_user">My curves</string>
 
-    <string name="spectrum_title">Spectrum (Spectroid style)</string>
+    <string name="spectrum_title">Spectrum</string>
     <string name="spectrum_hint">Live shows the mic input, during the test it follows the sweep, and afterwards the peak hold stays on screen.</string>
     <string name="live_start">Live spectrum</string>
     <string name="live_stop">Stop live</string>
     <string name="legend_live">Spectrum</string>
     <string name="legend_hold">Peak hold</string>
+    <string name="wf_label">Waterfall (newest at top)</string>
     <string name="spectrum_peak">Peak %1$.0f Hz  %2$.1f dB    Input peak %3$.1f dBFS</string>
+
+    <string name="about_title">About and licenses</string>
+    <string name="about_open">About and licenses</string>
+    <string name="ok_btn">OK</string>
 </resources>
