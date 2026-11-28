@@ -8,16 +8,29 @@
     <string name="auto_curve_hint">Curve chosen automatically for this output</string>
     <string name="use_auto_curve">Use the automatic curve</string>
     <string name="preset_output">Saved for: %1$s</string>
-    <string name="adv_show">Show advanced sound groups</string>
-    <string name="adv_hide">Hide advanced sound groups</string>
-    <string name="adv_groups_title">Advanced sound groups</string>
-    <string name="adv_groups_hint">Standard audio-engineering bands. The speech band is the ITU-T G.712 telephone band (300–3400 Hz).</string>
-    <string name="adv_sub_bass">Sub-bass</string>
-    <string name="adv_bass">Bass</string>
-    <string name="adv_low_mid">Low mids</string>
-    <string name="adv_mid">Mids</string>
-    <string name="adv_upper_mid">Upper mids</string>
-    <string name="adv_presence">Presence</string>
-    <string name="adv_brilliance">Brilliance</string>
-    <string name="adv_speech">Speech band</string>
+
+    <string name="mode_advanced">Advanced mode</string>
+    <string name="mode_simple">Simple mode</string>
+    <string name="adv_groups_hint">The approximate frequency range of each group is shown next to its name; the app maps it onto the nine bands.</string>
+    <string name="g_bass">Bass</string>
+    <string name="g_treble">Treble</string>
+    <string name="g_vocal">Vocal</string>
+    <string name="g_clarity">Clarity</string>
+    <string name="g_deep_bass">Deep bass</string>
+    <string name="g_drums">Drums</string>
+    <string name="g_warmth">Warmth</string>
+    <string name="g_vocals">Vocals</string>
+    <string name="g_instruments">Instruments</string>
+    <string name="g_guitar">Guitar</string>
+    <string name="g_strings">Strings</string>
+    <string name="g_piano">Piano</string>
+    <string name="g_brilliance">Brilliance</string>
+    <string name="g_air">Air</string>
+    <string name="g_soundstage">Soundstage</string>
+
+    <string name="mic_corr">Approximate mic error correction</string>
+    <string name="mic_corr_info">A typical phone MEMS capsule is about -3 dB at 75 Hz and rises a few dB above 10 kHz (plus or minus 1 to 3 dB between units). This only removes that typical error, it is not a real calibration.</string>
+
+    <string name="exp_opening">Experimental: opening the system audio-effect panel</string>
+    <string name="exp_none">No app handles the audio-effect panel</string>
 </resources>

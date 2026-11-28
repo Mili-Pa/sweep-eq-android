@@ -8,16 +8,29 @@
     <string name="auto_curve_hint">منحنی به‌صورت خودکار با این خروجی انتخاب شده</string>
     <string name="use_auto_curve">استفاده از منحنی خودکار</string>
     <string name="preset_output">ذخیره‌شده برای: %1$s</string>
-    <string name="adv_show">نمایش دسته‌های پیشرفته</string>
-    <string name="adv_hide">پنهان کردن دسته‌های پیشرفته</string>
-    <string name="adv_groups_title">دسته‌های پیشرفته</string>
-    <string name="adv_groups_hint">باندهای استاندارد مهندسی صدا. «باند گفتار» همون باند تلفنی ITU-T G.712 (۳۰۰ تا ۳۴۰۰ هرتز) هست.</string>
-    <string name="adv_sub_bass">ساب‌باس</string>
-    <string name="adv_bass">باس</string>
-    <string name="adv_low_mid">میان‌پایین</string>
-    <string name="adv_mid">میان</string>
-    <string name="adv_upper_mid">میان‌بالا</string>
-    <string name="adv_presence">پرزنس</string>
-    <string name="adv_brilliance">بریلیانس</string>
-    <string name="adv_speech">باند گفتار</string>
+
+    <string name="mode_advanced">حالت پیشرفته</string>
+    <string name="mode_simple">حالت ساده</string>
+    <string name="adv_groups_hint">محدودهٔ تقریبی فرکانس هر دسته کنار اسمش نوشته شده و برنامه اون رو روی ۹ باند می‌نشونه.</string>
+    <string name="g_bass">باس</string>
+    <string name="g_treble">زیر (تریبل)</string>
+    <string name="g_vocal">صدای خواننده</string>
+    <string name="g_clarity">وضوح</string>
+    <string name="g_deep_bass">باس عمیق</string>
+    <string name="g_drums">درام</string>
+    <string name="g_warmth">گرمی صدا</string>
+    <string name="g_vocals">صدای خواننده</string>
+    <string name="g_instruments">سازها</string>
+    <string name="g_guitar">گیتار</string>
+    <string name="g_strings">سازهای زهی</string>
+    <string name="g_piano">پیانو</string>
+    <string name="g_brilliance">درخشندگی (بریلیانس)</string>
+    <string name="g_air">ایر (هوا)</string>
+    <string name="g_soundstage">فضای صدا (استیج)</string>
+
+    <string name="mic_corr">اصلاح تقریبی خطای میکروفون</string>
+    <string name="mic_corr_info">کپسول MEMS معمولی گوشی حدود ۳- دسی‌بل در ۷۵ هرتز داره و بالای ۱۰ کیلوهرتز چند دسی‌بل صعود می‌کنه (بین دستگاه‌ها ۱ تا ۳ دسی‌بل بالا یا پایین فرق داره). این گزینه فقط همین خطای معمول رو کم می‌کنه، کالیبراسیون واقعی نیست.</string>
+
+    <string name="exp_opening">آزمایشی: دارم پنل افکت صوتی سیستم رو باز می‌کنم</string>
+    <string name="exp_none">هیچ برنامه‌ای پنل افکت صوتی رو نمی‌شناسه</string>
 </resources>
