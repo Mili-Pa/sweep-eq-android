@@ -1,0 +1,23 @@
+<resources>
+    <string name="out_bluetooth">Bluetooth</string>
+    <string name="out_wired">Wired headphones</string>
+    <string name="out_usb">USB headset</string>
+    <string name="out_speaker">Phone speaker</string>
+    <string name="out_other">Other output</string>
+    <string name="output_now">Current output: %1$s</string>
+    <string name="auto_curve_hint">Curve chosen automatically for this output</string>
+    <string name="use_auto_curve">Use the automatic curve</string>
+    <string name="preset_output">Saved for: %1$s</string>
+    <string name="adv_show">Show advanced sound groups</string>
+    <string name="adv_hide">Hide advanced sound groups</string>
+    <string name="adv_groups_title">Advanced sound groups</string>
+    <string name="adv_groups_hint">Standard audio-engineering bands. The speech band is the ITU-T G.712 telephone band (300–3400 Hz).</string>
+    <string name="adv_sub_bass">Sub-bass</string>
+    <string name="adv_bass">Bass</string>
+    <string name="adv_low_mid">Low mids</string>
+    <string name="adv_mid">Mids</string>
+    <string name="adv_upper_mid">Upper mids</string>
+    <string name="adv_presence">Presence</string>
+    <string name="adv_brilliance">Brilliance</string>
+    <string name="adv_speech">Speech band</string>
+</resources>

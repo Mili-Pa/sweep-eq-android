@@ -6,7 +6,8 @@ import org.json.JSONObject
 
 class UserCurve(val id: String, val name: String, val bands: List<Double>, val ptsF: DoubleArray?, val ptsDb: DoubleArray?)
 
-class EqPreset(val id: String, val name: String, val levels: List<Int>)
+/** A saved equalizer setting; `output` is the audio output that was in use when it was saved. */
+class EqPreset(val id: String, val name: String, val levels: List<Int>, val output: String = "")
 
 /** Small persistent store (SharedPreferences, JSON) for the user's own curves and saved equalizer settings. */
 object Store {
@@ -57,7 +58,7 @@ object Store {
             (0 until a.length()).map { i ->
                 val o = a.getJSONObject(i)
                 val l = o.getJSONArray("levels")
-                EqPreset(o.getString("id"), o.getString("name"), (0 until l.length()).map { l.getInt(it) })
+                EqPreset(o.getString("id"), o.getString("name"), (0 until l.length()).map { l.getInt(it) }, o.optString("out", ""))
             }
         } catch (e: Exception) {
             emptyList()
@@ -71,6 +72,7 @@ object Store {
             o.put("id", p.id)
             o.put("name", p.name)
             o.put("levels", JSONArray(p.levels))
+            o.put("out", p.output)
             a.put(o)
         }
         sp(ctx).edit().putString("presets", a.toString()).apply()

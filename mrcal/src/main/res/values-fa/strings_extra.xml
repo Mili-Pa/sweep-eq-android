@@ -1,0 +1,23 @@
+<resources>
+    <string name="out_bluetooth">بلوتوث</string>
+    <string name="out_wired">هدفون سیمی</string>
+    <string name="out_usb">هدست USB</string>
+    <string name="out_speaker">اسپیکر گوشی</string>
+    <string name="out_other">خروجی دیگه</string>
+    <string name="output_now">خروجی فعلی: %1$s</string>
+    <string name="auto_curve_hint">منحنی به‌صورت خودکار با این خروجی انتخاب شده</string>
+    <string name="use_auto_curve">استفاده از منحنی خودکار</string>
+    <string name="preset_output">ذخیره‌شده برای: %1$s</string>
+    <string name="adv_show">نمایش دسته‌های پیشرفته</string>
+    <string name="adv_hide">پنهان کردن دسته‌های پیشرفته</string>
+    <string name="adv_groups_title">دسته‌های پیشرفته</string>
+    <string name="adv_groups_hint">باندهای استاندارد مهندسی صدا. «باند گفتار» همون باند تلفنی ITU-T G.712 (۳۰۰ تا ۳۴۰۰ هرتز) هست.</string>
+    <string name="adv_sub_bass">ساب‌باس</string>
+    <string name="adv_bass">باس</string>
+    <string name="adv_low_mid">میان‌پایین</string>
+    <string name="adv_mid">میان</string>
+    <string name="adv_upper_mid">میان‌بالا</string>
+    <string name="adv_presence">پرزنس</string>
+    <string name="adv_brilliance">بریلیانس</string>
+    <string name="adv_speech">باند گفتار</string>
+</resources>

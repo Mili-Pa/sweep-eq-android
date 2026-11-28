@@ -5,8 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Typeface as ComposeTypeface
+import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +93,21 @@ private fun licenseText(ctx: Context): String {
     return sb.toString()
 }
 
+/** Shows the audio output in use and whether the curve was picked automatically for it. */
+@Composable
+private fun OutputBar(output: OutputInfo, auto: Boolean, onAuto: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text(stringResource(R.string.output_now, output.label), style = MaterialTheme.typography.bodyMedium)
+            if (auto) {
+                Text(stringResource(R.string.auto_curve_hint), style = MaterialTheme.typography.bodySmall)
+            } else {
+                TextButton(onClick = onAuto) { Text(stringResource(R.string.use_auto_curve)) }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
@@ -100,12 +115,15 @@ fun App() {
     var reloadKey by remember { mutableIntStateOf(0) }
     val targets = remember(reloadKey) { Targets.load(ctx) }
     var tab by remember { mutableIntStateOf(0) }
-    var selectedId by remember { mutableStateOf("bk_in_room") }
+    var pickedId by remember { mutableStateOf<String?>(null) }
     var eqBands by remember { mutableStateOf(List(9) { 0.0 }) }
     var showAbout by remember { mutableStateOf(false) }
+    val output by rememberOutput()
 
-    // keep the selection valid if the selected user curve was deleted
-    val effectiveId = if (targets.any { it.id == selectedId }) selectedId else (targets.firstOrNull()?.id ?: "")
+    // Default curve: Harman In-Room, or Harman In-Ear 2019 while Bluetooth / wired headphones are the output.
+    val autoId = if (output.headphones) "harman_inear_2019" else "harman_in_room"
+    val pickedValid = pickedId != null && targets.any { it.id == pickedId }
+    val effectiveId = if (pickedValid) pickedId!! else if (targets.any { it.id == autoId }) autoId else (targets.firstOrNull()?.id ?: "")
 
     Scaffold(
         topBar = {
@@ -143,20 +161,25 @@ fun App() {
     ) { pad ->
         Surface(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
-                0 -> TestScreen(
-                    targets = targets,
-                    selectedId = effectiveId,
-                    onSelect = { selectedId = it },
-                    onOpenLibrary = { tab = 1 },
-                    onSendToEq = { v -> eqBands = v; tab = 2 },
-                )
+                0 -> Column(Modifier.fillMaxSize()) {
+                    OutputBar(output, !pickedValid) { pickedId = null }
+                    Box(Modifier.weight(1f)) {
+                        TestScreen(
+                            targets = targets,
+                            selectedId = effectiveId,
+                            onSelect = { pickedId = it },
+                            onOpenLibrary = { tab = 1 },
+                            onSendToEq = { v -> eqBands = v; tab = 2 },
+                        )
+                    }
+                }
                 1 -> LibraryScreen(
                     targets = targets,
                     selectedId = effectiveId,
-                    onUse = { selectedId = it; tab = 0 },
+                    onUse = { pickedId = it; tab = 0 },
                     onChanged = { reloadKey++ },
                 )
-                else -> EqualizerScreen(eqBands) { eqBands = it }
+                else -> EqualizerScreen(eqBands, output) { eqBands = it }
             }
         }
     }

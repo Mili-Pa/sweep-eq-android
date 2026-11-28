@@ -5,8 +5,9 @@ Mr. Calibrator - third-party notices
 The equalization-curve shaping in this app (smoothing with a wide treble window, slope limiting with
 peak/dip protection, treble gain factor, the sharpness limit for peaking filters and the fixed-band
 graphic-EQ fitting) follows the approach of AutoEq, https://github.com/jaakkopasanen/AutoEq.
-The values of the Harman Over-Ear 2018, Harman Over-Ear 2015 and ISO 11904-1 diffuse-field targets were
-sampled from the target files in that repository.
+The headphone target curves (Harman Over-Ear 2018, Harman Over-Ear 2015, Harman In-Ear 2019 and its less-bass
+variant, Harman Over-Ear 2018 less-bass variant, ISO 11904-1 and B&K 5128 diffuse field, oratory1990 In-Ear and
+Optimum Hi-Fi, AutoEq In-Ear, InnerFidelity 2017) were sampled from the target files in that repository.
 
 MIT License
 
@@ -30,19 +31,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-2) Vazirmatn font (SIL Open Font License 1.1)
+2) HouseCurve target tables
+
+The room and car target tables (B&K, the Toole-inspired Harman in-room tilt, Car A, Car B and Car C) are numeric
+curve tables published by HouseCurve, https://housecurve.com (Greg Wilding), based on the B&K publication 17-197,
+Dr. Floyd Toole's work, the JBL curve and a Crutchfield curve. Only the numbers are used.
+
+3) Vazirmatn font (SIL Open Font License 1.1)
 
 The Persian user interface uses the Vazirmatn font, https://github.com/rastikerdar/vazirmatn,
 licensed under the SIL Open Font License 1.1. The font files and the full licence text are downloaded
 from the project's release tag when the app is built and are bundled with it.
 
-3) Reference curves and standards
+4) Reference curves and standards
 
-The B&K house curve, the X-curve (ISO 2969 / SMPTE) and the Harman target curves are published research and
-standards. Only numeric values describing their shapes are used here; no text of the standards is
-reproduced. Names of products and companies belong to their owners.
+The X-curve (ISO 2969 / SMPTE) is a published standard. Only numeric values describing its shape are used here;
+no text of the standards is reproduced. The sound-group frequency ranges use the common audio-engineering band
+names, and the speech band is the ITU-T G.712 telephone band (300-3400 Hz). Names of products and companies belong
+to their owners.
 
-4) Samsung
+5) Samsung
 
 This app is not affiliated with or endorsed by Samsung. It talks to the system app "Sound quality and
 effects" (com.sec.android.app.soundalive) through the content provider that app exports.

@@ -16,16 +16,86 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import kotlin.math.ln
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 
-/** How strongly each band follows a sound group (bass, vocals, instruments, other sounds). */
-private class SoundGroup(val nameRes: Int, val w: DoubleArray)
+private val BAND_C = intArrayOf(63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 
-private val GROUPS = listOf(
-    SoundGroup(R.string.grp_bass, doubleArrayOf(1.0, 0.8, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
-    SoundGroup(R.string.grp_vocals, doubleArrayOf(0.0, 0.0, 0.4, 0.8, 1.0, 0.8, 0.3, 0.0, 0.0)),
-    SoundGroup(R.string.grp_instruments, doubleArrayOf(0.0, 0.2, 0.4, 0.0, 0.0, 0.4, 1.0, 0.8, 0.0)),
-    SoundGroup(R.string.grp_other, doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.0)),
+/**
+ * A sound group is a frequency range (or two). Each of the nine bands (one octave wide) gets a weight
+ * from how much of its octave lies inside the range, so the groups follow the real frequency ranges.
+ */
+private class SoundGroup(val nameRes: Int, val rangeText: String, ranges: List<Pair<Double, Double>>) {
+    val w: DoubleArray = weights(ranges)
+
+    companion object {
+        fun weights(ranges: List<Pair<Double, Double>>): DoubleArray {
+            val s2 = sqrt(2.0)
+            val raw = DoubleArray(9) { i ->
+                val c = BAND_C[i].toDouble()
+                val bl = c / s2
+                val bh = c * s2
+                var s = 0.0
+                for ((lo, hi) in ranges) {
+                    val a = max(lo, bl)
+                    val b = min(hi, bh)
+                    if (b > a) s += ln(b / a) / ln(2.0)
+                }
+                min(s, 1.0)
+            }
+            val m = raw.max()
+            return if (m > 0.0) DoubleArray(9) { raw[it] / m } else raw
+        }
+    }
+}
+
+// The four main groups
+private val MAIN_GROUPS = listOf(
+    SoundGroup(R.string.grp_bass, "20–250 Hz", listOf(20.0 to 250.0)),
+    SoundGroup(R.string.grp_vocals, "250 Hz–4 kHz", listOf(250.0 to 4000.0)),
+    SoundGroup(R.string.grp_instruments, "125–500 Hz + 2–8 kHz", listOf(125.0 to 500.0, 2000.0 to 8000.0)),
+    SoundGroup(R.string.grp_other, "6–20 kHz", listOf(6000.0 to 20000.0)),
 )
+
+// Hidden advanced groups: the standard audio-engineering band names, plus the ITU-T G.712 speech band
+private val ADVANCED_GROUPS = listOf(
+    SoundGroup(R.string.adv_sub_bass, "20–60 Hz", listOf(20.0 to 60.0)),
+    SoundGroup(R.string.adv_bass, "60–250 Hz", listOf(60.0 to 250.0)),
+    SoundGroup(R.string.adv_low_mid, "250–500 Hz", listOf(250.0 to 500.0)),
+    SoundGroup(R.string.adv_mid, "500 Hz–2 kHz", listOf(500.0 to 2000.0)),
+    SoundGroup(R.string.adv_upper_mid, "2–4 kHz", listOf(2000.0 to 4000.0)),
+    SoundGroup(R.string.adv_presence, "4–6 kHz", listOf(4000.0 to 6000.0)),
+    SoundGroup(R.string.adv_brilliance, "6–20 kHz", listOf(6000.0 to 20000.0)),
+    SoundGroup(R.string.adv_speech, "300–3400 Hz", listOf(300.0 to 3400.0)),
+)
+
+@Composable
+private fun GroupSlider(group: SoundGroup, bands: List<Double>, onBands: (List<Double>) -> Unit) {
+    var sw = 0.0
+    var sw2 = 0.0
+    var sv = 0.0
+    for (i in 0 until 9) {
+        sw += group.w[i]
+        sw2 += group.w[i] * group.w[i]
+        sv += group.w[i] * bands[i]
+    }
+    val avg = if (sw > 0) sv / sw else 0.0
+    val k = if (sw2 > 0) sw / sw2 else 0.0
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(group.nameRes), style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+        Text(group.rangeText, style = MaterialTheme.typography.labelSmall)
+    }
+    Slider(
+        value = avg.toFloat().coerceIn(-10f, 10f),
+        onValueChange = { v ->
+            val delta = v.toDouble() - avg
+            onBands(List(9) { i -> (bands[i] + delta * group.w[i] * k).coerceIn(-10.0, 10.0) })
+        },
+        valueRange = -10f..10f,
+    )
+}
 
 @Composable
 internal fun NameDialog(title: String, initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
@@ -52,12 +122,13 @@ internal fun NameDialog(title: String, initial: String, onConfirm: (String) -> U
 
 /** Manual 9-band equalizer talking to Samsung's Sound quality and effects app, with sound groups and saved settings. */
 @Composable
-fun EqualizerScreen(bands: List<Double>, onBands: (List<Double>) -> Unit) {
+fun EqualizerScreen(bands: List<Double>, output: OutputInfo, onBands: (List<Double>) -> Unit) {
     val ctx = LocalContext.current
     var status by remember { mutableStateOf("") }
     var presets by remember { mutableStateOf(Store.loadPresets(ctx)) }
     var saveDialog by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<EqPreset?>(null) }
+    var showAdvanced by remember { mutableStateOf(false) }
     val levels = IntArray(9) { SamsungEq.clamp(bands[it]) }
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.outlineVariant
@@ -74,27 +145,22 @@ fun EqualizerScreen(bands: List<Double>, onBands: (List<Double>) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ElevatedCard {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.groups_title), style = MaterialTheme.typography.titleMedium)
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Column {
-                        GROUPS.forEach { grp ->
-                            var sw = 0.0
-                            var sv = 0.0
-                            for (i in 0 until 9) {
-                                sw += grp.w[i]
-                                sv += grp.w[i] * bands[i]
-                            }
-                            val avg = if (sw > 0) sv / sw else 0.0
-                            Text(stringResource(grp.nameRes), style = MaterialTheme.typography.labelLarge)
-                            Slider(
-                                value = avg.toFloat().coerceIn(-10f, 10f),
-                                onValueChange = { v ->
-                                    val delta = v.toDouble() - avg
-                                    onBands(List(9) { i -> (bands[i] + delta * grp.w[i]).coerceIn(-10.0, 10.0) })
-                                },
-                                valueRange = -10f..10f,
-                            )
+                        MAIN_GROUPS.forEach { grp -> GroupSlider(grp, bands, onBands) }
+                    }
+                }
+                TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                    Text(stringResource(if (showAdvanced) R.string.adv_hide else R.string.adv_show))
+                }
+                if (showAdvanced) {
+                    Text(stringResource(R.string.adv_groups_title), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.adv_groups_hint), style = MaterialTheme.typography.bodySmall)
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Column {
+                            ADVANCED_GROUPS.forEach { grp -> GroupSlider(grp, bands, onBands) }
                         }
                     }
                 }
@@ -163,6 +229,9 @@ fun EqualizerScreen(bands: List<Double>, onBands: (List<Double>) -> Unit) {
                     OutlinedCard {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(pr.name, style = MaterialTheme.typography.titleSmall)
+                            if (pr.output.isNotEmpty()) {
+                                Text(stringResource(R.string.preset_output, pr.output), style = MaterialTheme.typography.bodySmall)
+                            }
                             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                                 Text(pr.levels.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                             }
@@ -183,7 +252,7 @@ fun EqualizerScreen(bands: List<Double>, onBands: (List<Double>) -> Unit) {
             title = stringResource(R.string.preset_save),
             initial = stringResource(R.string.preset_default_name, presets.size + 1),
             onConfirm = { nm ->
-                persist(presets + EqPreset("p" + System.currentTimeMillis(), nm, levels.toList()))
+                persist(presets + EqPreset("p" + System.currentTimeMillis(), nm, levels.toList(), output.label))
                 saveDialog = false
             },
             onDismiss = { saveDialog = false },
@@ -195,7 +264,7 @@ fun EqualizerScreen(bands: List<Double>, onBands: (List<Double>) -> Unit) {
             title = stringResource(R.string.preset_rename),
             initial = rn.name,
             onConfirm = { nm ->
-                persist(presets.map { if (it.id == rn.id) EqPreset(it.id, nm, it.levels) else it })
+                persist(presets.map { if (it.id == rn.id) EqPreset(it.id, nm, it.levels, it.output) else it })
                 renaming = null
             },
             onDismiss = { renaming = null },
