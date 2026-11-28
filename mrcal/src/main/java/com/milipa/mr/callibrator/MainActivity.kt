@@ -19,9 +19,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,31 +42,36 @@ class MainActivity : ComponentActivity() {
 private fun persianTypography(ctx: Context): Typography? {
     if (ctx.resources.configuration.locales[0].language != "fa") return null
     return try {
-        val names = listOf("fonts/Vazirmatn-Regular.ttf", "fonts/Vazirmatn-Medium.ttf", "fonts/Vazirmatn-Bold.ttf")
-        for (n in names) ctx.assets.open(n).close()
-        val am = ctx.assets
-        val fam = FontFamily(
-            Font(am, names[0], FontWeight.Normal),
-            Font(am, names[1], FontWeight.Medium),
-            Font(am, names[2], FontWeight.Bold),
-        )
+        fun family(path: String): FontFamily =
+            FontFamily(ComposeTypeface(android.graphics.Typeface.createFromAsset(ctx.assets, path)))
+
+        val regular = family("fonts/Vazirmatn-Regular.ttf")
+        val medium = family("fonts/Vazirmatn-Medium.ttf")
+        val bold = family("fonts/Vazirmatn-Bold.ttf")
+
+        fun TextStyle.fa(): TextStyle {
+            val w = fontWeight?.weight ?: 400
+            val f = if (w >= 600) bold else if (w >= 500) medium else regular
+            return copy(fontFamily = f)
+        }
+
         val t = Typography()
         Typography(
-            displayLarge = t.displayLarge.copy(fontFamily = fam),
-            displayMedium = t.displayMedium.copy(fontFamily = fam),
-            displaySmall = t.displaySmall.copy(fontFamily = fam),
-            headlineLarge = t.headlineLarge.copy(fontFamily = fam),
-            headlineMedium = t.headlineMedium.copy(fontFamily = fam),
-            headlineSmall = t.headlineSmall.copy(fontFamily = fam),
-            titleLarge = t.titleLarge.copy(fontFamily = fam),
-            titleMedium = t.titleMedium.copy(fontFamily = fam),
-            titleSmall = t.titleSmall.copy(fontFamily = fam),
-            bodyLarge = t.bodyLarge.copy(fontFamily = fam),
-            bodyMedium = t.bodyMedium.copy(fontFamily = fam),
-            bodySmall = t.bodySmall.copy(fontFamily = fam),
-            labelLarge = t.labelLarge.copy(fontFamily = fam),
-            labelMedium = t.labelMedium.copy(fontFamily = fam),
-            labelSmall = t.labelSmall.copy(fontFamily = fam),
+            displayLarge = t.displayLarge.fa(),
+            displayMedium = t.displayMedium.fa(),
+            displaySmall = t.displaySmall.fa(),
+            headlineLarge = t.headlineLarge.fa(),
+            headlineMedium = t.headlineMedium.fa(),
+            headlineSmall = t.headlineSmall.fa(),
+            titleLarge = t.titleLarge.fa(),
+            titleMedium = t.titleMedium.fa(),
+            titleSmall = t.titleSmall.fa(),
+            bodyLarge = t.bodyLarge.fa(),
+            bodyMedium = t.bodyMedium.fa(),
+            bodySmall = t.bodySmall.fa(),
+            labelLarge = t.labelLarge.fa(),
+            labelMedium = t.labelMedium.fa(),
+            labelSmall = t.labelSmall.fa(),
         )
     } catch (e: Throwable) {
         null
@@ -80,8 +85,9 @@ private fun licenseText(ctx: Context): String {
     } catch (_: Throwable) {
     }
     try {
+        val ofl = ctx.assets.open("licenses/Vazirmatn-OFL.txt").bufferedReader().use { it.readText() }
         sb.append("\n\n----- Vazirmatn OFL -----\n\n")
-        sb.append(ctx.assets.open("licenses/Vazirmatn-OFL.txt").bufferedReader().use { it.readText() })
+        sb.append(ofl)
     } catch (_: Throwable) {
     }
     return sb.toString()
