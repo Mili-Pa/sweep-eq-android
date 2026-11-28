@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -44,7 +46,8 @@ val downloadFonts = tasks.register("downloadFonts") {
             if (dest.exists() && dest.length() > 1000) continue
             try {
                 dest.parentFile.mkdirs()
-                val bytes = java.net.URI(url).toURL().openStream().use { it.readBytes() }
+                val input = URI(url).toURL().openStream()
+                val bytes = input.use { s -> s.readBytes() }
                 if (rel.endsWith(".ttf")) {
                     check(bytes.size > 10000 && bytes[0].toInt() == 0 && bytes[1].toInt() == 1 && bytes[2].toInt() == 0 && bytes[3].toInt() == 0) {
                         "not a TrueType file"
