@@ -39,7 +39,15 @@ jobs:
         run: echo "version=$(tr -d '[:space:]' < MRCAL_VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Build signed release APK
-        run: gradle :mrcal:assembleRelease --no-daemon
+        run: |
+          set -o pipefail
+          gradle :mrcal:assembleRelease --no-daemon 2>&1 | tee build.log
+
+      - name: Report build errors as annotations
+        if: failure()
+        run: |
+          msg=$(grep -E "^e: |^w: .*(Unresolved|error)|What went wrong|Script compilation|Unresolved reference|error:|Execution failed|^> " build.log | head -50 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle errors::$msg"
 
       - name: Name the APK
         run: cp mrcal/build/outputs/apk/release/mrcal-release.apk "MrCalibrator-v${{ steps.v.outputs.version }}.apk"
